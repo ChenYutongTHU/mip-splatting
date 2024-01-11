@@ -13,22 +13,78 @@ from scene.cameras import Camera
 import numpy as np
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
+from tqdm import tqdm 
+import torch
+from torch.utils.data import DataLoader, Dataset
+from PIL import Image
+from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
+
 
 WARNED = False
 
-def loadCam(args, id, cam_info, resolution_scale):
-    orig_w, orig_h = cam_info.image.size
+class CameraDataset(Dataset):
+    def __init__(self, cam_infos, resolution_scale, args):
+        self.cam_infos = cam_infos
+        self.resolution_scale = resolution_scale
+        self.args = args
+        image = Image.open(self.cam_infos[0].image_path)
+
+        print('Use dataset_type=loader, we assume all images have the same fovX, width and height')
+        self.width0, self.height0 = image.size
+        self.fovx = cam_infos[0].FovX
+        if self.width0 > 1600:
+            global WARNED
+            if not WARNED:
+                print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
+                    "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                WARNED = True
+        FovY = focal2fov(fov2focal(self.fovx, self.width0), self.height0)
+
+        self.wo_image = [
+            Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
+                  FoVx=cam_info.FovX, FoVy=FovY, 
+                  image=None, gt_alpha_mask=None,
+                  image_name=cam_info.image_name, uid=id, data_device='cpu', 
+                  width0=self.width0, height0=self.height0) \
+                for id,cam_info in enumerate(self.cam_infos)]
+
+
+    def __len__(self):
+        return len(self.cam_infos)
+
+    def __getitem__(self, idx):
+        image = Image.open(self.cam_infos[idx].image_path)
+        im_data = np.array(image.convert("RGBA"))
+        bg = np.array([1,1,1]) if self.cam_infos[idx].white_background else np.array([0, 0, 0])
+        norm_data = im_data / 255.0
+        arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+        image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+        return loadCam(self.args, idx, self.cam_infos[idx], self.resolution_scale, 
+                       image=image, data_device='cpu')
+    
+def loadCam(args, id, cam_info, resolution_scale, image=None, data_device=None):
+    if image is None:
+        image = cam_info.image 
+        FovY = cam_info.FovY
+    else:
+        image = image 
+        width, height = image.size
+        FovY = focal2fov(fov2focal(cam_info.FovX, width), height)
+
+    data_device = args.data_device if data_device is None else data_device
+
+    orig_w, orig_h = image.size
 
     if args.resolution in [1, 2, 4, 8, 16, 32, 64]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
-                global WARNED
-                if not WARNED:
-                    print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
-                        "If this is not desired, please explicitly specify '--resolution/-r' as 1")
-                    WARNED = True
+                # global WARNED
+                # if not WARNED:
+                #     print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
+                #         "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                #     WARNED = True
                 global_down = orig_w / 1600
             else:
                 global_down = 1
@@ -38,7 +94,7 @@ def loadCam(args, id, cam_info, resolution_scale):
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
-    resized_image_rgb = PILtoTorch(cam_info.image, resolution)
+    resized_image_rgb = PILtoTorch(image, resolution)
 
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
@@ -47,17 +103,24 @@ def loadCam(args, id, cam_info, resolution_scale):
         loaded_mask = resized_image_rgb[3:4, ...]
 
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
-                  FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
+                  FoVx=cam_info.FovX, FoVy=FovY, 
                   image=gt_image, gt_alpha_mask=loaded_mask,
-                  image_name=cam_info.image_name, uid=id, data_device=args.data_device)
+                  image_name=cam_info.image_name, uid=id, data_device=data_device)
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args):
-    camera_list = []
 
-    for id, c in enumerate(cam_infos):
-        camera_list.append(loadCam(args, id, c, resolution_scale))
+def Camera_Collate_fn(batch):
+    return batch[0]
 
-    return camera_list
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, shuffle=False):
+    if args.dataset_type.lower() == 'list': #preload image
+        camera_list = []
+        for id, c in tqdm(enumerate(cam_infos)):
+            camera_list.append(loadCam(args, id, c, resolution_scale))
+        return camera_list
+    elif args.dataset_type.lower() == 'loader':
+        dataset = CameraDataset(cam_infos, resolution_scale, args)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=shuffle, collate_fn=Camera_Collate_fn, num_workers=4)
+        return dataloader
 
 def camera_to_JSON(id, camera : Camera):
     Rt = np.zeros((4, 4))
@@ -76,7 +139,9 @@ def camera_to_JSON(id, camera : Camera):
         'height' : camera.height,
         'position': pos.tolist(),
         'rotation': serializable_array_2d,
-        'fy' : fov2focal(camera.FovY, camera.height),
-        'fx' : fov2focal(camera.FovX, camera.width)
+        'fy' : fov2focal(camera.FovY, camera.height) if camera.height is not None else None,
+        'fx' : fov2focal(camera.FovX, camera.width) if camera.width is not None else None,
+        'FovX' : camera.FovX,
+        'FovY' : camera.FovY,
     }
     return camera_entry

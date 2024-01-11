@@ -26,6 +26,8 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from tqdm import tqdm 
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -63,19 +65,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
 
-    trainCameras = scene.getTrainCameras().copy()
-    testCameras = scene.getTestCameras().copy()
-    allCameras = trainCameras + testCameras
+    viewpoint_stack = None
+    if dataset.dataset_type == "list":
+        viewpoint_stack = None
+    else:
+        viewpoint_loader = scene.getTrainCameras()
+        viewpoint_iter = iter(viewpoint_loader)
+
+    if args.dataset_type == "list":
+        trainCameras = scene.getTrainCameras().copy()
+        testCameras = scene.getTestCameras().copy()
+        allCameras = trainCameras + testCameras
+    elif args.dataset_type == "loader":
+        trainCameras = viewpoint_loader.dataset.wo_image
+    else:
+        raise Exception("Unknown dataset type!")
     
-    # highresolution index
     highresolution_index = []
     for index, camera in enumerate(trainCameras):
         if camera.image_width >= 800:
             highresolution_index.append(index)
-
     gaussians.compute_3D_filter(cameras=trainCameras)
 
-    viewpoint_stack = None
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
@@ -103,10 +114,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        # Pick a random Camera
-        if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+        if dataset.dataset_type == "list":
+            if not viewpoint_stack:
+                viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+        elif dataset.dataset_type == "loader":
+            try:
+                viewpoint_cam = next(viewpoint_iter)
+                viewpoint_cam.move_to_device(args.data_device)
+            except StopIteration:
+                viewpoint_iter = iter(viewpoint_loader)
+                viewpoint_cam = next(viewpoint_iter)
+                viewpoint_cam.move_to_device(args.data_device)
+        else:
+            assert False, "Could not recognize dataset type!"
+
         
         # Pick a random high resolution camera
         if random.random() < 0.3 and dataset.sample_more_highres:
@@ -211,14 +233,24 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
-                              {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
+        if args.dataset_type == "list":
+            validation_configs = [{'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]}]
+        else:
+            validation_configs = [{'name': 'train', 
+                                   'cameras': [scene.getTrainCameras().dataset[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]}]
+        if type(scene.test_cameras) == dict:
+            for test_name in scene.test_cameras.keys():
+                validation_configs.append({'name': test_name, 'cameras': scene.getTestCameras(test_name=test_name)})
+        elif type(scene.test_cameras) == list:
+            validation_configs.append({'name': 'test', 'cameras': scene.getTestCameras()})
 
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
                 l1_test = 0.0
                 psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
+                    if args.dataset_type == 'loader':
+                        viewpoint.move_to_device(args.data_device)
                     image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     if tb_writer and (idx < 5):

@@ -37,11 +37,14 @@ class Scene:
                 self.loaded_iter = load_iteration
             print("Loading trained model at iteration {}".format(self.loaded_iter))
 
-        self.train_cameras = {}
-        self.test_cameras = {}
-
-        if os.path.exists(os.path.join(args.source_path, "sparse")):
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
+        if args.blender_train_json != '':
+            print(f"blender_train_json={args.blender_train_json}, assuming Blender data set!")
+            scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, train_num_camera_ratio=args.train_num_camera_ratio, 
+                                                           blender_train_json=args.blender_train_json,
+                                                           blender_test_jsons=args.blender_test_jsons, dataset_type=args.dataset_type)    
+        elif os.path.exists(os.path.join(args.source_path, "sparse")):
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
+                                                          args.focal_length_scale, args.minus_depth)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
@@ -57,7 +60,11 @@ class Scene:
             json_cams = []
             camlist = []
             if scene_info.test_cameras:
-                camlist.extend(scene_info.test_cameras)
+                if type(scene_info.test_cameras) == dict:
+                    for key, value in scene_info.test_cameras.items():
+                        camlist.extend(value)
+                else:
+                    camlist.extend(scene_info.test_cameras)
             if scene_info.train_cameras:
                 camlist.extend(scene_info.train_cameras)
             for id, cam in enumerate(camlist):
@@ -71,11 +78,25 @@ class Scene:
 
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
-        for resolution_scale in resolution_scales:
-            print("Loading Training Cameras")
+        self.train_cameras = {}
+        self.test_cameras = {}
+        if isinstance(scene_info.test_cameras, list):
+            self.test_cameras = {'test':{}}
+        elif isinstance(scene_info.test_cameras, dict):
+            self.test_cameras = {k:{} for k in scene_info.test_cameras.keys()}
+
+        for resolution_scale in resolution_scales: #[1.0]
+            print('Resolution_scale: ', resolution_scale)
+            print("Loading Training Cameras", end=' ')
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
-            print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+            print(f"#={len(self.train_cameras[resolution_scale])}")
+            if isinstance(scene_info.test_cameras, list):
+                self.test_cameras['test'][resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+                print("Loading Test Cameras", f"#={len(self.test_cameras)}")
+            elif isinstance(scene_info.test_cameras, dict):
+                for key, value in scene_info.test_cameras.items():
+                    self.test_cameras[key][resolution_scale] = cameraList_from_camInfos(value, resolution_scale, args)
+                    print("Loading Test Cameras", f"Length of {key}: {len(self.test_cameras[key][resolution_scale])}")
 
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
@@ -92,5 +113,5 @@ class Scene:
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]
 
-    def getTestCameras(self, scale=1.0):
-        return self.test_cameras[scale]
+    def getTestCameras(self, scale=1.0, test_name="test"):
+        return self.test_cameras[test_name][scale]

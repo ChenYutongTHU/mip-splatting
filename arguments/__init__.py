@@ -60,11 +60,22 @@ class ModelParams(ParamGroup):
         self.resample_gt_image = False
         self.load_allres = False
         self.sample_more_highres = False
+        self.llffhold = 8 
+        self.train_num_camera_ratio = -1. # if -1, use llffhold, train_num_camera_ratio = (1-1/self.llffhold)
+        self.split_file = ''
+        self.blender_train_json = ''
+        self.blender_test_jsons = ''
+        self.focal_length_scale = 1.0
+        self.minus_depth = 0.0
+        self.dataset_type = "list"
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
         g = super().extract(args)
         g.source_path = os.path.abspath(g.source_path)
+        for name, valu in vars(self).items():
+            if not hasattr(g, name):
+                setattr(g, name, valu)
         return g
 
 class PipelineParams(ParamGroup):
