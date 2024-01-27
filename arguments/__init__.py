@@ -52,6 +52,7 @@ class ModelParams(ParamGroup):
         self._images = "images"
         self._resolution = -1
         self._white_background = False
+        self.rnd_background = False
         self.data_device = "cuda"
         self.eval = False
         self._kernel_size = 0.3

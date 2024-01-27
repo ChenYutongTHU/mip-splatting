@@ -18,7 +18,7 @@ class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
                  image_name, uid,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",
-                 width0=None, height0=None, fovx=None, fovy=None
+                 width0=None, height0=None, fovx=None, fovy=None, bg=np.array([0.0, 0.0, 0.0])
                  ):
         super(Camera, self).__init__()
 
@@ -29,6 +29,7 @@ class Camera(nn.Module):
         self.FoVx = FoVx
         self.FoVy = FoVy
         self.image_name = image_name
+        self.bg = bg
 
         try:
             self.data_device = torch.device(data_device)

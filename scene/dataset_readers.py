@@ -36,7 +36,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
-    white_background: bool = False
+    white_background: bool = False #For dataloader = list, Move to camera_utils.dataset
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
