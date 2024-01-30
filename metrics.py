@@ -73,7 +73,7 @@ def evaluate(model_path, scale):
     per_view_dict_polytopeonly = {}
     print("model_path:", model_path)
 
-    for test_dir in glob(f'{model_path}/train*')+glob(f'{model_path}/test*'):
+    for test_dir in glob(f'{model_path}/train*')+glob(f'{model_path}/test*')+glob(f'{model_path}/fly*'):
         split = test_dir.split('/')[-1]
         print("Split:", split)
         full_dict[split] = {}

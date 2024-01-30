@@ -69,6 +69,8 @@ class ModelParams(ParamGroup):
         self.focal_length_scale = 1.0
         self.minus_depth = 0.0
         self.dataset_type = "list"
+        self.eval_test_interval = 7 
+        self.eval_train_interval = -1
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

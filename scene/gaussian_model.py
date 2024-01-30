@@ -142,7 +142,6 @@ class GaussianModel:
 
     @torch.no_grad()
     def compute_3D_filter(self, cameras):
-        print("Computing 3D filter")
         #TODO consider focal length and image width
         xyz = self.get_xyz
         distance = torch.ones((xyz.shape[0]), device=xyz.device) * 100000.0
@@ -504,20 +503,39 @@ class GaussianModel:
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
+        stats = {'densify': 0, 'densify_split': 0, 'densify_clone': 0,
+                 'prune': 0,'prune_small-opacity':0,'prune_large-radius':0,'prune_large-scale':0,}
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
-
+        N0 = self.get_xyz.shape[0]
         self.densify_and_clone(grads, max_grad, extent)
+        stats['densify_clone'] = self.get_xyz.shape[0] - N0
         self.densify_and_split(grads, max_grad, extent)
+        stats['densify_split'] = self.get_xyz.shape[0] - N0
+        stats['densify'] = stats['densify_clone'] + stats['densify_split']
+        stats['densify_ratio'] = stats['densify'] / N0
+        N0 = self.get_xyz.shape[0]
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
+        stats['prune_small-opacity'] = prune_mask.sum()
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            # print('Prune points {} due to small opacity | {} due to large radii | {} due to large scaling'.format(
+            #     (prune_mask).sum(),
+            #     (big_points_vs).sum(),
+            #     (big_points_ws).sum()))
+            stats['prune_large-radius'] = big_points_vs.sum()
+            stats['prune_large-scale'] = big_points_ws.sum()
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+        stats['prune'] = prune_mask.sum()
+        stats['prune_ratio'] = stats['prune'] / N0
         self.prune_points(prune_mask)
 
+        # print('Prune total {} points'.format((prune_mask).sum()), end=' ')
         torch.cuda.empty_cache()
+        # print('Points #{} -> #{}'.format(N0,self.get_xyz.shape[0]))
+        return stats
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)

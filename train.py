@@ -27,6 +27,8 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from tqdm import tqdm 
+import wandb 
+from PIL import Image
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -49,7 +51,7 @@ def create_offset_gt(image, offset):
     image = torch.nn.functional.grid_sample(image[None], id_coords[None], align_corners=True, padding_mode="border")[0]
     return image
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, show_wandb):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -167,11 +169,53 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, dataset.kernel_size))
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, dataset.kernel_size), 
+                            show_wandb=show_wandb, 
+                            eval_train_interval=dataset.eval_train_interval,
+                            eval_test_interval=dataset.eval_test_interval)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
+            # Densification
 
+            if (iteration==0 or iteration % (opt.densification_interval*10) == 0) and show_wandb:
+                wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
+                    1.0 - ssim(image, gt_image)).item()}, step=iteration)
+                
+                def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
+                    data = sorted(data.detach().cpu().numpy())
+                    N = len(data)
+                    for p in percentiles:
+                        n = min(int(N*p//100), N-1)
+                        wandb.log({name+f'_percentile{p}%': data[n]}, step=step)
+                
+                for name, scale in [('scale', gaussians.get_scaling),
+                                    ('scale_with_3D_filter', gaussians.get_scaling_with_3D_filter)]:
+                    wandb_percentile(torch.max(scale, dim=1).values, f"{name}-max", iteration)
+                    wandb_percentile(torch.min(scale, dim=1).values, f"{name}-min", iteration)
+                    wandb_percentile(torch.median(scale, dim=1).values, f"{name}-median", iteration)
+                    wandb_percentile(torch.mean(scale, dim=1), f"{name}-mean", iteration)
+                    wandb_percentile(torch.max(scale, dim=1).values/torch.min(scale, dim=1).values, f"{name}-max-div-min", iteration)
+
+                wandb_percentile(gaussians._scaling.grad.view(-1), "scaling_grad", iteration)
+                wandb_percentile(gaussians.get_opacity.view(-1), "opacity", iteration)
+                wandb_percentile(gaussians.max_radii2D[visibility_filter].view(-1), "visible-max_radii2D", iteration)
+                # wandb_percentile(gaussians.min_radii2D[visibility_filter].view(-1), "visibile-min_radii2D", iteration)
+
+                wandb_percentile(radii[visibility_filter].view(-1),"visible-radii2D (the max lambda)", iteration)
+                # wandb_percentile(radii_min[visibility_filter].view(-1),"visible-radii2D (the min lambda)", iteration)
+                # wandb_percentile(render_pkg["radiiBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the max lambda)", iteration)
+                # wandb_percentile(render_pkg["radii_minBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the min lambda)", iteration)                
+                
+                #wandb_percentile(torch.norm(viewspace_point_tensor.grad[:, :2], dim=-1), "mean2D_grad", iteration)
+                grads = gaussians.xyz_gradient_accum / gaussians.denom
+                grads[grads.isnan()] = 0
+                wandb_percentile(grads, "average-acc-mean2D-grad", iteration)
+                wandb_percentile(gaussians.filter_3D.view(-1), "filter_3D", iteration)
+                wandb.log({"number-gaussians": gaussians.get_xyz.shape[0],
+                           "densify_grad_threshold": opt.densify_grad_threshold,
+                           "split-or-clone_threshold": gaussians.percent_dense*scene.cameras_extent}, step=iteration)
+                
             # Densification
             if iteration < opt.densify_until_iter:
                 # Keep track of max radii in image-space for pruning
@@ -180,8 +224,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                    densify_and_prune_stats = gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     gaussians.compute_3D_filter(cameras=trainCameras)
+                    if show_wandb and iteration % (opt.densification_interval*10) == 0:
+                        wandb.log(densify_and_prune_stats, step=iteration)
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -222,7 +268,8 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, 
+                    show_wandb, eval_train_interval, eval_test_interval):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -231,22 +278,35 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        if args.dataset_type == "list":
-            validation_configs = [{'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]}]
+        if eval_train_interval>0:
+            if args.dataset_type == "list":
+                validation_configs = [{'name': 'train', 'cameras' : scene.getTrainCameras()[::eval_train_interval]}]
+            else:
+                validation_configs = [{'name': 'train', 
+                                    'cameras': [scene.getTrainCameras().dataset[ii] \
+                                                for ii in np.arange(0, len(scene.getTrainCameras().dataset), eval_train_interval)]}]
         else:
-            validation_configs = [{'name': 'train', 
-                                   'cameras': [scene.getTrainCameras().dataset[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]}]
+            validation_configs = [] #skip train
         if type(scene.test_cameras) == dict:
             for test_name in scene.test_cameras.keys():
-                validation_configs.append({'name': test_name, 'cameras': scene.getTestCameras(test_name=test_name)})
+                if args.dataset_type == "list":
+                    validation_configs.append({'name': test_name, 
+                                               'cameras': [scene.getTestCameras(test_name=test_name)[ii] \
+                                                for ii in np.arange(0, len(scene.getTestCameras(test_name=test_name)), eval_test_interval)]})
+                else:
+                    validation_configs.append({'name': test_name, 
+                                           'cameras': [scene.getTestCameras(test_name=test_name).dataset[ii]
+                                                for ii in np.arange(0, len(scene.getTestCameras(test_name=test_name).dataset), eval_test_interval)]})
         elif type(scene.test_cameras) == list:
-            validation_configs.append({'name': 'test', 'cameras': scene.getTestCameras()})
+            validation_configs.append({'name': 'test', 'cameras': scene.getTestCameras()[::eval_test_interval]})
 
         for config in validation_configs:
+            output_dir = os.path.join(args.model_path, 'eval', str(iteration), config['name'])
+            os.makedirs(output_dir, exist_ok=True)
             if config['cameras'] and len(config['cameras']) > 0:
                 l1_test = 0.0
                 psnr_test = 0.0
-                for idx, viewpoint in enumerate(config['cameras']):
+                for idx, viewpoint in tqdm(enumerate(config['cameras']), desc="Evaluating " + config['name'], total=len(config['cameras'])):
                     if args.dataset_type == 'loader':
                         viewpoint.move_to_device(args.data_device)
                     image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
@@ -257,12 +317,23 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
+
+                    #save image
+                    image = image.permute(1, 2, 0).cpu().numpy()
+                    image = Image.fromarray((image * 255).astype(np.uint8))
+                    image.save(os.path.join(output_dir, viewpoint.image_name + ".png"))
+                    if idx==0 and show_wandb:
+                        wandb.log({f'eval/{config["name"]} - render': wandb.Image(image, caption=f'{config["name"]} - render')}, step=iteration)
+                        # wandb.log({f'eval/{config["name"]} - ground_truth': wandb.Image(viewpoint.original_image.cpu().numpy().transpose(1, 2, 0), caption=f'{config["name"]} - ground_truth')}, step=iteration)
+
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])          
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
+                if show_wandb:
+                    wandb.log({'eval/'+f'{config["name"]} - psnr': psnr_test}, step=iteration)
 
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
@@ -279,23 +350,34 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    # parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    # parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--test_save_interval", type=int, default=5000)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args(sys.argv[1:])
-    args.save_iterations.append(args.iterations)
+    #args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
+    if args.wandb:
+        import wandb
+        wandb_run = wandb.init(project="gaussian", config=args, dir=args.model_path) #resume=?
+        wandb.run.name = 'mipGS_'+args.model_path.split("/")[-1]
+        wandb.config.update(args, ) #notes=, tag=['','']
+
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    test_iterations = [1]+[i for i in np.arange(0, args.iterations+1, args.test_save_interval)][1:]
+    save_iterations = test_iterations
+    training(lp.extract(args), op.extract(args), pp.extract(args), test_iterations, save_iterations, args.checkpoint_iterations, args.start_checkpoint, 
+             args.debug_from, args.wandb)
 
     # All done
     print("\nTraining complete.")
