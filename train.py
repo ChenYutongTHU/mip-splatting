@@ -365,14 +365,21 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
+    # Start GUI server, configure and run training
+    while True:
+        try:
+            network_gui.init(args.ip, args.port)
+            break
+        except Exception as e:
+            print(e)
+            print("Change port to {}".format(args.port + 1))
+            args.port += 1
     if args.wandb:
         import wandb
         wandb_run = wandb.init(project="gaussian", config=args, dir=args.model_path) #resume=?
         wandb.run.name = 'mipGS_'+args.model_path.split("/")[-1]
         wandb.config.update(args, ) #notes=, tag=['','']
 
-    # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     test_iterations = [1]+[i for i in np.arange(0, args.iterations+1, args.test_save_interval)][1:]
     save_iterations = test_iterations
