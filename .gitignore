@@ -1,4 +1,8 @@
 *.pyc
+scripts
+*.ipynb
+*.sh 
+make_video.py
 .vscode
 output
 build
