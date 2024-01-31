@@ -120,15 +120,15 @@ def loadCam(args, id, cam_info, resolution_scale, bg, image=None, data_device=No
 def Camera_Collate_fn(batch):
     return batch[0]
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args, shuffle=False):
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_training):
     if args.dataset_type.lower() == 'list': #preload image
         camera_list = []
         for id, c in tqdm(enumerate(cam_infos)):
             camera_list.append(loadCam(args, id, c, resolution_scale))
         return camera_list
     elif args.dataset_type.lower() == 'loader':
-        dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=shuffle)
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=shuffle, collate_fn=Camera_Collate_fn, num_workers=4)
+        dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=is_training)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=is_training, collate_fn=Camera_Collate_fn, num_workers=4)
         return dataloader
 
 def camera_to_JSON(id, camera : Camera):

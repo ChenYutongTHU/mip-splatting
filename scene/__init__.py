@@ -89,14 +89,14 @@ class Scene:
         for resolution_scale in resolution_scales: #[1.0]
             print('Resolution_scale: ', resolution_scale)
             print("Loading Training Cameras", end=' ')
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, is_training=shuffle)
             print(f"#={len(self.train_cameras[resolution_scale])}")
             if isinstance(scene_info.test_cameras, list):
-                self.test_cameras['test'][resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+                self.test_cameras['test'][resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, is_training=False)
                 print("Loading Test Cameras", f"#={len(self.test_cameras)}")
             elif isinstance(scene_info.test_cameras, dict):
                 for key, value in scene_info.test_cameras.items():
-                    self.test_cameras[key][resolution_scale] = cameraList_from_camInfos(value, resolution_scale, args)
+                    self.test_cameras[key][resolution_scale] = cameraList_from_camInfos(value, resolution_scale, args, is_training=False)
                     print("Loading Test Cameras", f"Length of {key}: {len(self.test_cameras[key][resolution_scale])}")
 
         if self.loaded_iter:
