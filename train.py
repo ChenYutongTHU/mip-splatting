@@ -189,7 +189,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if (iteration==0 or iteration % (opt.densification_interval*10) == 0) and show_wandb:
+                if (iteration==0 or iteration % (opt.densification_interval*1) == 0) and show_wandb:
                     wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
                         1.0 - ssim(image, gt_image)).item()}, step=iteration)
                     
@@ -233,7 +233,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     densify_and_prune_stats = gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                     gaussians.compute_3D_filter(cameras=trainCameras)
-                    if show_wandb and iteration % (opt.densification_interval*10) == 0:
+                    if show_wandb and iteration % (opt.densification_interval*1) == 0:
                         wandb.log(densify_and_prune_stats, step=iteration)
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
