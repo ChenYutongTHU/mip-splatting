@@ -297,7 +297,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png",train_n
         print(f"Generating random point cloud ({num_pts})...")
         
         # We create random points inside the bounds of the synthetic Blender scenes
-        if len(blender_bbox)==0:
+        if len(blender_bbox)==1:
             radius = blender_bbox[0]
             xyz = np.random.random((num_pts, 3)) * (2*radius) - radius
         else:
