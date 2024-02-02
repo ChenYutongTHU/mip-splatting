@@ -221,7 +221,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     #wandb_percentile(torch.norm(viewspace_point_tensor.grad[:, :2], dim=-1), "mean2D_grad", iteration)
                     grads = gaussians.xyz_gradient_accum / gaussians.denom
                     grads[grads.isnan()] = 0
-                    print(grads.shape)
                     wandb_percentile(grads, "average-acc-mean2D-grad", iteration,[0, 20, 40, 60, 80, 90, 95, 97, 99])
                     densify_number = torch.sum(grads>opt.densify_grad_threshold)
                     wandb_percentile(gaussians.filter_3D.view(-1), "filter_3D", iteration)
