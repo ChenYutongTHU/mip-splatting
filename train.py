@@ -182,43 +182,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 scene.save(iteration)
             # Densification
 
-            if (iteration==0 or iteration % (opt.densification_interval*10) == 0) and show_wandb:
-                wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
-                    1.0 - ssim(image, gt_image)).item()}, step=iteration)
-                
-                def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
-                    data = sorted(data.detach().cpu().numpy())
-                    N = len(data)
-                    for p in percentiles:
-                        n = min(int(N*p//100), N-1)
-                        wandb.log({name+f'_percentile{p}%': data[n]}, step=step)
-                
-                for name, scale in [('scale', gaussians.get_scaling),
-                                    ('scale_with_3D_filter', gaussians.get_scaling_with_3D_filter)]:
-                    wandb_percentile(torch.max(scale, dim=1).values, f"{name}-max", iteration)
-                    wandb_percentile(torch.min(scale, dim=1).values, f"{name}-min", iteration)
-                    wandb_percentile(torch.median(scale, dim=1).values, f"{name}-median", iteration)
-                    wandb_percentile(torch.mean(scale, dim=1), f"{name}-mean", iteration)
-                    wandb_percentile(torch.max(scale, dim=1).values/torch.min(scale, dim=1).values, f"{name}-max-div-min", iteration)
-
-                wandb_percentile(gaussians._scaling.grad.view(-1), "scaling_grad", iteration)
-                wandb_percentile(gaussians.get_opacity.view(-1), "opacity", iteration)
-                wandb_percentile(gaussians.max_radii2D[visibility_filter].view(-1), "visible-max_radii2D", iteration)
-                # wandb_percentile(gaussians.min_radii2D[visibility_filter].view(-1), "visibile-min_radii2D", iteration)
-
-                wandb_percentile(radii[visibility_filter].view(-1),"visible-radii2D (the max lambda)", iteration)
-                # wandb_percentile(radii_min[visibility_filter].view(-1),"visible-radii2D (the min lambda)", iteration)
-                # wandb_percentile(render_pkg["radiiBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the max lambda)", iteration)
-                # wandb_percentile(render_pkg["radii_minBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the min lambda)", iteration)                
-                
-                #wandb_percentile(torch.norm(viewspace_point_tensor.grad[:, :2], dim=-1), "mean2D_grad", iteration)
-                grads = gaussians.xyz_gradient_accum / gaussians.denom
-                grads[grads.isnan()] = 0
-                wandb_percentile(grads, "average-acc-mean2D-grad", iteration)
-                wandb_percentile(gaussians.filter_3D.view(-1), "filter_3D", iteration)
-                wandb.log({"number-gaussians": gaussians.get_xyz.shape[0],
-                           "densify_grad_threshold": opt.densify_grad_threshold,
-                           "split-or-clone_threshold": gaussians.percent_dense*scene.cameras_extent}, step=iteration)
                 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -226,6 +189,47 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
+                if (iteration==0 or iteration % (opt.densification_interval*10) == 0) and show_wandb:
+                    wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
+                        1.0 - ssim(image, gt_image)).item()}, step=iteration)
+                    
+                    def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
+                        data = sorted(data.detach().cpu().numpy())
+                        N = len(data)
+                        for p in percentiles:
+                            n = min(int(N*p//100), N-1)
+                            wandb.log({name+f'_percentile{p}%': data[n]}, step=step)
+                    
+                    for name, scale in [('scale', gaussians.get_scaling),
+                                        ('scale_with_3D_filter', gaussians.get_scaling_with_3D_filter)]:
+                        wandb_percentile(torch.max(scale, dim=1).values, f"{name}-max", iteration)
+                        wandb_percentile(torch.min(scale, dim=1).values, f"{name}-min", iteration)
+                        wandb_percentile(torch.median(scale, dim=1).values, f"{name}-median", iteration)
+                        wandb_percentile(torch.mean(scale, dim=1), f"{name}-mean", iteration)
+                        wandb_percentile(torch.max(scale, dim=1).values/torch.min(scale, dim=1).values, f"{name}-max-div-min", iteration)
+
+                    wandb_percentile(gaussians._scaling.grad.view(-1), "scaling_grad", iteration)
+                    wandb_percentile(gaussians.get_opacity.view(-1), "opacity", iteration)
+                    wandb_percentile(gaussians.max_radii2D[visibility_filter].view(-1), "visible-max_radii2D", iteration)
+                    # wandb_percentile(gaussians.min_radii2D[visibility_filter].view(-1), "visibile-min_radii2D", iteration)
+
+                    wandb_percentile(radii[visibility_filter].view(-1),"visible-radii2D (the max lambda)", iteration)
+                    # wandb_percentile(radii_min[visibility_filter].view(-1),"visible-radii2D (the min lambda)", iteration)
+                    # wandb_percentile(render_pkg["radiiBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the max lambda)", iteration)
+                    # wandb_percentile(render_pkg["radii_minBeforeFilter"][visibility_filter].view(-1),"visible-radii2D-before-filter (the min lambda)", iteration)                
+                    
+                    #wandb_percentile(torch.norm(viewspace_point_tensor.grad[:, :2], dim=-1), "mean2D_grad", iteration)
+                    grads = gaussians.xyz_gradient_accum / gaussians.denom
+                    grads[grads.isnan()] = 0
+                    print(grads.shape)
+                    wandb_percentile(grads, "average-acc-mean2D-grad", iteration,[0, 20, 40, 60, 80, 90, 95, 97, 99])
+                    densify_number = torch.sum(grads>opt.densify_grad_threshold)
+                    wandb_percentile(gaussians.filter_3D.view(-1), "filter_3D", iteration)
+                    wandb.log({"number-gaussians": gaussians.get_xyz.shape[0],
+                            "densify_grad_threshold": opt.densify_grad_threshold,
+                            "split-or-clone_threshold": gaussians.percent_dense*scene.cameras_extent,
+                            "ge-threshold_number": densify_number}, step=iteration)
+                
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                     densify_and_prune_stats = gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)

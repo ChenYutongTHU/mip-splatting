@@ -510,6 +510,7 @@ class GaussianModel:
         N0 = self.get_xyz.shape[0]
         self.densify_and_clone(grads, max_grad, extent)
         stats['densify_clone'] = self.get_xyz.shape[0] - N0
+        N0 = self.get_xyz.shape[0] #Bug fix
         self.densify_and_split(grads, max_grad, extent)
         stats['densify_split'] = self.get_xyz.shape[0] - N0
         stats['densify'] = stats['densify_clone'] + stats['densify_split']
