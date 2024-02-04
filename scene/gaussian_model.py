@@ -183,12 +183,18 @@ class GaussianModel:
             if focal_length < camera.focal_x:
                 focal_length = camera.focal_x
         
-        distance[~valid_points] = distance[valid_points].max()
-        
-        #TODO remove hard coded value
-        #TODO box to gaussian transform
-        filter_3D = distance / focal_length * (0.2 ** 0.5)
-        self.filter_3D = filter_3D[..., None]
+        if valid_points.sum() == 0:
+            self.filter_3D = torch.zeros((xyz.shape[0], 1), device=xyz.device) 
+            print('Empty valid points')
+            print('valid_depth: ', valid_depth.sum(), 'in_screen: ', in_screen.sum())
+            #Dirty Solution [It won't happen in practice]
+        else:
+            distance[~valid_points] = distance[valid_points].max()
+            
+            #TODO remove hard coded value
+            #TODO box to gaussian transform
+            filter_3D = distance / focal_length * (0.2 ** 0.5)
+            self.filter_3D = filter_3D[..., None]
         
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
