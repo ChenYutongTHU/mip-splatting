@@ -77,8 +77,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     if args.dataset_type == "list":
         trainCameras = scene.getTrainCameras().copy()
-        testCameras = scene.getTestCameras().copy()
-        allCameras = trainCameras + testCameras
+        #testCameras = scene.getTestCameras().copy()
+        #allCameras = trainCameras + testCameras
     elif args.dataset_type == "loader":
         trainCameras = viewpoint_loader.dataset.wo_image
     else:
