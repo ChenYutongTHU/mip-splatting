@@ -31,7 +31,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(gts_path, exist_ok=True)
 
     if save_grad:
-        grad_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"grad")
+        grad_path = os.path.join(model_path, name, "ours_{}".format(iteration), "grad_{}".format(iteration))
         makedirs(grad_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
