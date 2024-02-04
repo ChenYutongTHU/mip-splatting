@@ -29,20 +29,19 @@ class CameraDataset(Dataset):
         self.args = args
         image = Image.open(self.cam_infos[0].image_path)
 
-        print('Use dataset_type=loader, we assume all images have the same fovX, width and height')
+        print('Use dataset_type=loader, we assume all images have the same width and height')
         self.width0, self.height0 = image.size
-        self.fovx = cam_infos[0].FovX
         if self.width0 > 1600:
             global WARNED
             if not WARNED:
                 print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
                     "If this is not desired, please explicitly specify '--resolution/-r' as 1")
                 WARNED = True
-        FovY = focal2fov(fov2focal(self.fovx, self.width0), self.height0)
 
         self.wo_image = [
             Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
-                  FoVx=cam_info.FovX, FoVy=FovY, 
+                  FoVx=cam_info.FovX, 
+                  FoVy=focal2fov(fov2focal(cam_info.FovX, self.width0), self.height0), 
                   image=None, gt_alpha_mask=None,
                   image_name=cam_info.image_name, uid=id, data_device='cpu', 
                   width0=self.width0, height0=self.height0) \
