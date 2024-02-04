@@ -357,9 +357,9 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    # parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    # parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--test_save_interval", type=int, default=2500)
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--test_save_interval", type=int, default=-1)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
@@ -388,8 +388,12 @@ if __name__ == "__main__":
         wandb.config.update(args, ) #notes=, tag=['','']
 
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    test_iterations = [1]+[i for i in np.arange(0, args.iterations+1, args.test_save_interval)][1:]
-    save_iterations = test_iterations
+    if args.test_save_interval==-1:
+        test_iterations = args.test_iterations
+        save_iterations = args.save_iterations
+    else:
+        test_iterations = [1]+[i for i in np.arange(0, args.iterations+1, args.test_save_interval)][1:]
+        save_iterations = test_iterations
     training(lp.extract(args), op.extract(args), pp.extract(args), test_iterations, save_iterations, args.checkpoint_iterations, args.start_checkpoint, 
              args.debug_from, args.wandb)
 
