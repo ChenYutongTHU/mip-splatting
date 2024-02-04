@@ -122,8 +122,10 @@ def Camera_Collate_fn(batch):
 def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_training):
     if args.dataset_type.lower() == 'list': #preload image
         camera_list = []
+        assert args.rnd_background == False, "rnd_background is not supported for dataset_type=list"
+        bg = np.array([1,1,1]) if args.white_background else np.array([0, 0, 0])
         for id, c in tqdm(enumerate(cam_infos)):
-            camera_list.append(loadCam(args, id, c, resolution_scale))
+            camera_list.append(loadCam(args, id, c, resolution_scale, bg=bg))
         return camera_list
     elif args.dataset_type.lower() == 'loader':
         dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=is_training)
