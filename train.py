@@ -192,7 +192,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if (iteration==0 or iteration % (opt.densification_interval*1) == 0) and show_wandb:
                     wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
                         1.0 - ssim(image, gt_image)).item()}, step=iteration)
-                    
+                    wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
+                                for param_group in gaussians.optimizer.param_groups}, step=iteration)
                     def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
                         data = sorted(data.detach().cpu().numpy())
                         N = len(data)
