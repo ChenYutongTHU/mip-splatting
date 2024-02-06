@@ -76,6 +76,7 @@ class ModelParams(ParamGroup):
         self.blender_bbox = [1.3]
         self.eval_test_interval = 14 
         self.eval_train_interval = -1
+        self.sample_from_pcd = ""
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

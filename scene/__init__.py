@@ -42,7 +42,8 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, train_num_camera_ratio=args.train_num_camera_ratio, 
                                                            blender_train_json=args.blender_train_json,
                                                            blender_test_jsons=args.blender_test_jsons, dataset_type=args.dataset_type,
-                                                           blender_bbox=args.blender_bbox)    
+                                                           blender_bbox=args.blender_bbox,
+                                                           sample_from_pcd=args.sample_from_pcd)    
         elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
                                                           args.focal_length_scale, args.minus_depth)
