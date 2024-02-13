@@ -306,6 +306,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png",train_n
             vertices = plydata['vertex']
             xyz = np.vstack(
                 [vertices['x'], vertices['y'], vertices['z']]).T
+            num_pts = min(num_pts, xyz.shape[0])
             sample_indices = np.random.choice(xyz.shape[0], size=[num_pts], replace=False)
             xyz = xyz[sample_indices,:]
             print(f"Sampling {num_pts} points from {sample_from_pcd}...")
