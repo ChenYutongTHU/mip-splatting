@@ -1,3 +1,5 @@
+output_atlas
+pcd
 *.pyc
 scripts
 *.ipynb
