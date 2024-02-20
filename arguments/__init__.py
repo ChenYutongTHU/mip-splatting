@@ -77,6 +77,7 @@ class ModelParams(ParamGroup):
         self.eval_test_interval = 14 
         self.eval_train_interval = -1
         self.sample_from_pcd = ""
+        self.dataset_sourcetype = "blender" #For Sugar
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

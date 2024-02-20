@@ -280,7 +280,10 @@ class GaussianModel:
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
 
-        filter_3D = self.filter_3D.detach().cpu().numpy()
+        if hasattr(self, 'filter_3D'):
+            filter_3D = self.filter_3D.detach().cpu().numpy()
+        else:
+            filter_3D = np.zeros((xyz.shape[0], 1))
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
@@ -339,7 +342,11 @@ class GaussianModel:
                         np.asarray(plydata.elements[0]["z"])),  axis=1)
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
 
-        filter_3D = np.asarray(plydata.elements[0]["filter_3D"])[..., np.newaxis]
+        try:
+            filter_3D = np.asarray(plydata.elements[0]["filter_3D"])[..., np.newaxis]
+        except:
+            print('Filter 3D not found in the ply file, set it to 0')
+            filter_3D = np.zeros((xyz.shape[0], 1))
 
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
