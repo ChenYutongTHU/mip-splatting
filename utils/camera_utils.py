@@ -31,12 +31,6 @@ class CameraDataset(Dataset):
 
         print('Use dataset_type=loader, we assume all images have the same width and height')
         self.width0, self.height0 = image.size
-        if self.width0 > 1600:
-            global WARNED
-            if not WARNED:
-                print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
-                    "If this is not desired, please explicitly specify '--resolution/-r' as 1")
-                WARNED = True
 
         self.wo_image = [
             Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
