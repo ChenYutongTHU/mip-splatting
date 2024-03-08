@@ -142,7 +142,7 @@ def storePly(path, xyz, rgb):
     ply_data.write(path)
 
 
-def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, 
+def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_num_camera_ratio=None,
                         focal_length_scale=1.0, minus_depth=0.0, dataset_type="list",):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
@@ -175,6 +175,10 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None,
                         test_cam_infos[test_k] = [name2cam_infos[image_name] for image_name in test_ids] 
             print(f'Use Split file {split_file} ...')
             print('Train cameras:', len(train_cam_infos), 'Test cameras:', len(test_cam_infos))
+        elif train_num_camera_ratio != None:
+            step = math.floor(1/train_num_camera_ratio)
+            train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % step==0]
+            test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % step!=0]
         else:
             train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
             test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold == 0]

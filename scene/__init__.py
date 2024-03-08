@@ -46,6 +46,7 @@ class Scene:
                                                            sample_from_pcd=args.sample_from_pcd)    
         elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
+                                                          args.train_num_camera_ratio,
                                                           args.focal_length_scale, args.minus_depth,
                                                           dataset_type=args.dataset_type)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
