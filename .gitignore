@@ -1,3 +1,6 @@
+make_video*
+requirements.txt
+
 output_atlas
 pcd
 *.pyc
