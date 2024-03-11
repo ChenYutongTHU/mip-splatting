@@ -78,6 +78,8 @@ class ModelParams(ParamGroup):
         self.eval_train_interval = -1
         self.sample_from_pcd = ""
         self.dataset_sourcetype = "blender" #For Sugar
+        self.apply_3Dfilter_off = False
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

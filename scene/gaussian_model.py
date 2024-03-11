@@ -42,9 +42,11 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, sh_degree : int):
+    def __init__(self, sh_degree : int, apply_3Dfilter_off : bool):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
+        self.apply_3Dfilter = not apply_3Dfilter_off
+        print('Apply 3D filter: ', self.apply_3Dfilter, 'Runing:', 'mipSplatting' if self.apply_3Dfilter else 'Vanilla-GS')
         self._xyz = torch.empty(0)
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
@@ -144,6 +146,9 @@ class GaussianModel:
     def compute_3D_filter(self, cameras):
         #TODO consider focal length and image width
         xyz = self.get_xyz
+        if self.apply_3Dfilter == False:
+            self.filter_3D = torch.zeros((xyz.shape[0], 1), device="cuda")
+            return #No need to compute 3D filter, all_zeros all the time
         distance = torch.ones((xyz.shape[0]), device=xyz.device) * 100000.0
         valid_points = torch.zeros((xyz.shape[0]), device=xyz.device, dtype=torch.bool)
         
@@ -380,7 +385,10 @@ class GaussianModel:
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
-        self.filter_3D = torch.tensor(filter_3D, dtype=torch.float, device="cuda")
+        if self.apply_3Dfilter:
+            self.filter_3D = torch.tensor(filter_3D, dtype=torch.float, device="cuda")
+        else:
+            self.filter_3D = torch.zeros((xyz.shape[0], 1), device="cuda")
 
         self.active_sh_degree = self.max_sh_degree
 
