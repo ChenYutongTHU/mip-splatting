@@ -54,7 +54,7 @@ def create_offset_gt(image, offset):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, show_wandb):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree, dataset.apply_3Dfilter_off)
+    gaussians = GaussianModel(dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 

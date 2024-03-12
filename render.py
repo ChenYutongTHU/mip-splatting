@@ -60,7 +60,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, save_as_idx : bool, save_grad : bool, opt=None):
     torch.set_grad_enabled(save_grad)
-    gaussians = GaussianModel(dataset.sh_degree, dataset.apply_3Dfilter_off)
+    gaussians = GaussianModel(
+        dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic, dataset.isotropic)
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     scale_factor = dataset.resolution
     bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]

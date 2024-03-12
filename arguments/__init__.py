@@ -60,6 +60,7 @@ class ModelParams(ParamGroup):
         self.data_device = "cuda"
         self.eval = False
         self._kernel_size = 0.3
+        self.isotropic = False
         # self.use_spatial_gaussian_bias = False
         self.ray_jitter = False
         self.resample_gt_image = False
