@@ -107,7 +107,7 @@ __device__ float4 computeCov2D(const float3& mean, float focal_x, float focal_y,
 
 	// Apply low-pass filter: every Gaussian should be at least
 	// one pixel wide/high. Discard 3rd row and column.
-
+	
 	// compute the coef of alpha based on the detemintant
 	const float det_0 = max(1e-6, cov[0][0] * cov[1][1] - cov[0][1] * cov[0][1]);
 	const float det_1 = max(1e-6, (cov[0][0] + kernel_size) * (cov[1][1] + kernel_size) - cov[0][1] * cov[0][1]);
@@ -279,11 +279,14 @@ renderCUDA(
 	const float2* __restrict__ subpixel_offset,
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
+	const float* __restrict__ depths,
 	const float4* __restrict__ conic_opacity,
+	float* __restrict__ out_alpha,
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
-	float* __restrict__ out_color)
+	float* __restrict__ out_color,
+	float* __restrict__ out_depth)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -292,14 +295,14 @@ renderCUDA(
 	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) };
 	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y };
 	uint32_t pix_id = W * pix.y + pix.x;
-	float2 pixf = { (float)pix.x, (float)pix.y }; // TODO plus 0.5
+	float2 pixf = { (float)pix.x, (float)pix.y };
 
 	// Check if this thread is associated with a valid pixel or outside.
 	bool inside = pix.x < W&& pix.y < H;
 	// Done threads can help with fetching, but don't rasterize
 	bool done = !inside;
 
-	// add the offset to pixel
+// add the offset to pixel
 	if (inside){
 		pixf.x += subpixel_offset[pix_id].x;
 		pixf.y += subpixel_offset[pix_id].y;
@@ -322,6 +325,7 @@ renderCUDA(
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
+	float D = 0;
 
 	// Iterate over batches until all done or range is complete
 	for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -374,7 +378,7 @@ renderCUDA(
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
-
+			D += depths[collected_id[j]] * alpha * T;
 			T = test_T;
 
 			// Keep track of last range entry to update this
@@ -388,9 +392,11 @@ renderCUDA(
 	if (inside)
 	{
 		final_T[pix_id] = T;
+		out_alpha[pix_id] = 1-T;
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
+		out_depth[pix_id] = D;
 	}
 }
 
@@ -402,11 +408,14 @@ void FORWARD::render(
 	const float2* subpixel_offset,
 	const float2* means2D,
 	const float* colors,
+	const float* depths,
 	const float4* conic_opacity,
 	float* final_T,
+	float* out_alpha,
 	uint32_t* n_contrib,
 	const float* bg_color,
-	float* out_color)
+	float* out_color,
+	float* out_depth)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -415,11 +424,14 @@ void FORWARD::render(
 		subpixel_offset,
 		means2D,
 		colors,
+		depths,
 		conic_opacity,
 		final_T,
+		out_alpha,
 		n_contrib,
 		bg_color,
-		out_color);
+		out_color,
+		out_depth);
 }
 
 void FORWARD::preprocess(int P, int D, int M,

@@ -48,7 +48,7 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
                                                           args.train_num_camera_ratio,
                                                           args.focal_length_scale, args.minus_depth,
-                                                          dataset_type=args.dataset_type)
+                                                          dataset_type=args.dataset_type,colmap_pcd=args.colmap_pcd,max_pcd_num=args.max_pcd_num,)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)

@@ -42,7 +42,7 @@ class GaussianModel:
         self.rotation_activation = torch.nn.functional.normalize
 
 
-    def __init__(self, sh_degree : int, apply_3Dfilter_off : bool, isotropic: bool):
+    def __init__(self, sh_degree : int, apply_3Dfilter_off : bool=False, isotropic: bool=False):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
         self.apply_3Dfilter = not apply_3Dfilter_off

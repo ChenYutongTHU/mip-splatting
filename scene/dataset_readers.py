@@ -110,7 +110,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dataset_typ
     sys.stdout.write('\n')
     return cam_infos
 
-def fetchPly(path):
+def fetchPly(path, max_num=None):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
@@ -122,6 +122,11 @@ def fetchPly(path):
         normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     except:
         normals = None
+    if max_num is not None:
+        stride = max(1, int(positions.shape[0] / max_num))
+        positions = positions[::stride]
+        colors = colors[::stride]
+        normals = normals[::stride]
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 def storePly(path, xyz, rgb):
@@ -143,7 +148,7 @@ def storePly(path, xyz, rgb):
 
 
 def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_num_camera_ratio=None,
-                        focal_length_scale=1.0, minus_depth=0.0, dataset_type="list",):
+                        focal_length_scale=1.0, minus_depth=0.0, dataset_type="list", colmap_pcd="", max_pcd_num=1e10):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
@@ -188,9 +193,13 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_n
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = os.path.join(path, "sparse/0/points3D.ply")
-    bin_path = os.path.join(path, "sparse/0/points3D.bin")
-    txt_path = os.path.join(path, "sparse/0/points3D.txt")
+    if colmap_pcd is not "":
+        ply_path = colmap_pcd
+        print("Load point3d from ", ply_path,'number of points', max_pcd_num)
+    else:
+        ply_path = os.path.join(path, "sparse/0/points3D.ply")
+        bin_path = os.path.join(path, "sparse/0/points3D.bin")
+        txt_path = os.path.join(path, "sparse/0/points3D.txt")
     if not os.path.exists(ply_path):
         print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
         try:
@@ -199,7 +208,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_n
             xyz, rgb, _ = read_points3D_text(txt_path)
         storePly(ply_path, xyz, rgb)
     try:
-        pcd = fetchPly(ply_path)
+        pcd = fetchPly(ply_path, max_num=max_pcd_num)
     except:
         pcd = None
 

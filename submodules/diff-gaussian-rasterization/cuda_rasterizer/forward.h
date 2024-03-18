@@ -57,11 +57,14 @@ namespace FORWARD
 		const float2* subpixel_offset,
 		const float2* points_xy_image,
 		const float* features,
+		const float* depths,
 		const float4* conic_opacity,
+		float* out_alpha,
 		float* final_T,
 		uint32_t* n_contrib,
 		const float* bg_color,
-		float* out_color);
+		float* out_color,
+		float* out_depth);
 }
 
 

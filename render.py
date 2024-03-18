@@ -21,6 +21,31 @@ from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args, OptimizationParams
 from gaussian_renderer import GaussianModel
 from utils.loss_utils import l1_loss, ssim
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from PIL import Image
+import numpy as np
+def visualize_depth_map(depth_map, alpha_map, high=None, low=None):
+    alpha_mask = alpha_map > 0.2
+    def normalize_depth_map(depth_map, high=None, low=None):
+        if high is None:
+            high = np.max(depth_map[alpha_mask])
+        if low is None:
+            low = np.min(depth_map[alpha_mask]) #To remove the background map
+        normalized_depth_map = (depth_map - low) / (high - low)
+        normalized_depth_map = np.clip(normalized_depth_map, 0, 1)
+        return normalized_depth_map
+    normalized_depth_map = normalize_depth_map(depth_map, high=high, low=low)
+    colormap = cm.get_cmap('turbo')
+    colored_depth_map = (colormap(normalized_depth_map[0]) * 255).astype(np.uint8)
+    colored_depth_map = np.expand_dims(alpha_mask[0], axis=-1) * colored_depth_map
+    image = Image.fromarray(colored_depth_map)
+    return image
+
+def visualize_alpha_map(alpha_map):
+    alpha_map = alpha_map[0]*255
+    alpha_map = alpha_map.astype(np.uint8)
+    return Image.fromarray(alpha_map)
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, kernel_size, scale_factor, 
                save_as_idx=False, save_grad=False, opt=None):
@@ -28,6 +53,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), f"gt_{scale_factor}")\
 
     makedirs(render_path, exist_ok=True)
+    makedirs(render_path+'_depth', exist_ok=True)
+    makedirs(render_path+'_alpha', exist_ok=True)
     makedirs(gts_path, exist_ok=True)
 
     if save_grad:
@@ -45,6 +72,16 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         else:
             torchvision.utils.save_image(rendering, os.path.join(render_path, view.image_name + ".png"))
             torchvision.utils.save_image(gt, os.path.join(gts_path, view.image_name + ".png"))
+            # if 'sergey' in render_path:
+            #     _,h,w = render_pkg['depth'].shape
+            #     render_pkg['depth'] = render_pkg['depth'][:,h//2:,w//4:3*w//4]
+            #     # render_pkg['alpha'] = render_pkg['alpha'][:,h//2:,w//4:3*w//4]
+            #     torchvision.utils.save_image(rendering[:,h//2:,w//4:3*w//4], os.path.join(render_path+'_depth', view.image_name + ".png"))
+            depth_viz = visualize_depth_map(render_pkg['depth'].cpu().numpy(), render_pkg['alpha'].cpu().numpy())
+            depth_viz.save(os.path.join(render_path+'_depth', view.image_name + "_depth.png"))
+            torch.save(render_pkg['depth'].cpu(), os.path.join(render_path+'_depth', view.image_name + "_depth.pt"))
+            alpha_viz = visualize_alpha_map(render_pkg['alpha'].cpu().numpy())
+            alpha_viz.save(os.path.join(render_path+'_alpha', view.image_name + "_alpha.png"))
         
         if save_grad:
             # import ipdb;ipdb.set_trace()
@@ -61,7 +98,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, save_as_idx : bool, save_grad : bool, opt=None):
     torch.set_grad_enabled(save_grad)
     gaussians = GaussianModel(
-        dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic, dataset.isotropic)
+        dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic)
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     scale_factor = dataset.resolution
     bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]

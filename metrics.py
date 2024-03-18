@@ -93,12 +93,15 @@ def evaluate(model_path, scale):
                 gt_dir = method_dir/ "gt_-1"
             if not os.path.isdir(gt_dir):
                 gt_dir = method_dir/ "gt_1"
-
+            if not os.path.isdir(gt_dir):
+                gt_dir = method_dir/ "gt_2"
             renders_dir = method_dir / "renders"
             if not os.path.isdir(renders_dir):
                 renders_dir = method_dir / "test_preds_-1"
             if not os.path.isdir(renders_dir):
                 renders_dir = method_dir / "test_preds_1"
+            if not os.path.isdir(renders_dir):
+                renders_dir = method_dir / "test_preds_2"
 
             #renders, gts, image_names = readImages(renders_dir, gt_dir)
 

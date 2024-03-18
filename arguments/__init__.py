@@ -80,6 +80,8 @@ class ModelParams(ParamGroup):
         self.sample_from_pcd = ""
         self.dataset_sourcetype = "blender" #For Sugar
         self.apply_3Dfilter_off = False
+        self.colmap_pcd = ""
+        self.max_pcd_num = 1e10
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
