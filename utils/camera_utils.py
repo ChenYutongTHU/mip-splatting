@@ -32,6 +32,7 @@ class CameraDataset(Dataset):
 
         print('Use dataset_type=loader, we assume all images have the same width and height')
         self.width0, self.height0 = image.size
+        self.kpt_depth_cache = args.kpt_depth_cache
 
         self.wo_image = [
             Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
@@ -41,7 +42,7 @@ class CameraDataset(Dataset):
                   image_name=cam_info.image_name, uid=id, data_device='cpu', 
                   width0=self.width0, height0=self.height0, 
                   point_cloud=point_cloud, 
-                  kpt_depth_cache=os.path.join(args.kpt_depth_cache, cam_info.image_name+'.pt')) \
+                  kpt_depth_cache="") \
                 for id,cam_info in enumerate(self.cam_infos)]
         
         if args.rnd_background and is_training:
@@ -67,7 +68,7 @@ class CameraDataset(Dataset):
         return loadCam(self.args, idx, self.cam_infos[idx], self.resolution_scale, 
                        image=image, data_device='cpu', bg=bg, 
                        point_cloud=self.point_cloud,
-                       kpt_depth_cache=self.wo_image[idx].kpt_depth_cache)
+                       kpt_depth_cache=os.path.join(self.kpt_depth_cache, self.cam_infos[idx].image_name+'.pt'))
     
 def loadCam(args, id, cam_info, resolution_scale, bg, point_cloud, kpt_depth_cache, image=None, data_device=None):
     if image is None:
