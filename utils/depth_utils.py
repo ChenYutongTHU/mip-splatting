@@ -15,6 +15,7 @@ def depth_related_loss(pred_depth, keypoint_uv, keypoint_depth,
     return depth_loss, depth_loss_dic
 
 
+'''
 #https://github.com/VITA-Group/FSGS/blob/main/utils/depth_utils.py
 import torch
 midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid")
@@ -55,3 +56,4 @@ def estimate_depth(img, mode='test'):
             align_corners=False,
         ).squeeze()
     return prediction
+'''
