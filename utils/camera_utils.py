@@ -18,15 +18,16 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
-
+import os
 
 WARNED = False
 
 class CameraDataset(Dataset):
-    def __init__(self, cam_infos, resolution_scale, args, is_training):
+    def __init__(self, cam_infos, resolution_scale, args, is_training, point_cloud):
         self.cam_infos = cam_infos
         self.resolution_scale = resolution_scale
         self.args = args
+        self.point_cloud = point_cloud
         image = Image.open(self.cam_infos[0].image_path)
 
         print('Use dataset_type=loader, we assume all images have the same width and height')
@@ -38,7 +39,9 @@ class CameraDataset(Dataset):
                   FoVy=focal2fov(fov2focal(cam_info.FovX, self.width0), self.height0), 
                   image=None, gt_alpha_mask=None,
                   image_name=cam_info.image_name, uid=id, data_device='cpu', 
-                  width0=self.width0, height0=self.height0) \
+                  width0=self.width0, height0=self.height0, 
+                  point_cloud=point_cloud, 
+                  kpt_depth_cache=os.path.join(args.kpt_depth_cache, cam_info.image_name+'.pt')) \
                 for id,cam_info in enumerate(self.cam_infos)]
         
         if args.rnd_background and is_training:
@@ -62,9 +65,11 @@ class CameraDataset(Dataset):
         arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
         image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
         return loadCam(self.args, idx, self.cam_infos[idx], self.resolution_scale, 
-                       image=image, data_device='cpu', bg=bg)
+                       image=image, data_device='cpu', bg=bg, 
+                       point_cloud=self.point_cloud,
+                       kpt_depth_cache=self.wo_image[idx].kpt_depth_cache)
     
-def loadCam(args, id, cam_info, resolution_scale, bg, image=None, data_device=None):
+def loadCam(args, id, cam_info, resolution_scale, bg, point_cloud, kpt_depth_cache, image=None, data_device=None):
     if image is None:
         image = cam_info.image 
         FovY = cam_info.FovY
@@ -104,25 +109,28 @@ def loadCam(args, id, cam_info, resolution_scale, bg, image=None, data_device=No
     if resized_image_rgb.shape[1] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
 
+
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=FovY, 
                   image=gt_image, gt_alpha_mask=loaded_mask,
-                  image_name=cam_info.image_name, uid=id, data_device=data_device, bg=bg)
+                  image_name=cam_info.image_name, uid=id, data_device=data_device, bg=bg, 
+                  point_cloud=point_cloud, kpt_depth_cache=kpt_depth_cache,)
 
 
 def Camera_Collate_fn(batch):
     return batch[0]
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_training):
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_training, point_cloud):
     if args.dataset_type.lower() == 'list': #preload image
         camera_list = []
         assert args.rnd_background == False, "rnd_background is not supported for dataset_type=list"
         bg = np.array([1,1,1]) if args.white_background else np.array([0, 0, 0])
         for id, c in tqdm(enumerate(cam_infos)):
-            camera_list.append(loadCam(args, id, c, resolution_scale, bg=bg))
+            camera_list.append(loadCam(args, id, c, resolution_scale, bg=bg, point_cloud=point_cloud, 
+                                       kpt_depth_cache=os.path.join(args.kpt_depth_cache, c.image_name+'.pt')))
         return camera_list
     elif args.dataset_type.lower() == 'loader':
-        dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=is_training)
+        dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=is_training, point_cloud=point_cloud)
         dataloader = DataLoader(dataset, batch_size=1, shuffle=is_training, collate_fn=Camera_Collate_fn, num_workers=4)
         return dataloader
 

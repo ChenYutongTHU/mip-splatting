@@ -16,7 +16,8 @@ import cv2
 import torch
 import random
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim, keypoint_depth_loss
+from utils.depth_utils import depth_related_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -150,7 +151,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         background = torch.tensor(viewpoint_cam.bg,device='cuda',dtype=torch.float32) 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size=dataset.kernel_size, subpixel_offset=subpixel_offset)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         # sample gt_image with subpixel offset
@@ -158,9 +158,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gt_image = create_offset_gt(gt_image, subpixel_offset)
 
         Ll1 = l1_loss(image, gt_image)
+        loss = 0
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss.backward()
+        depth_loss_total, depth_loss_dic = depth_related_loss(pred_depth=render_pkg['depth'], 
+                                   keypoint_depth=viewpoint_cam.keypoint_depth, keypoint_uv=viewpoint_cam.keypoint_uv,
+                                   keypoint_depth_loss_weight=opt.keypoint_depth_loss_weight,
+                                   keypoint_depth_loss_type=opt.keypoint_depth_loss_type)
 
+        loss += depth_loss_total
+        loss.backward()
         iter_end.record()
 
         with torch.no_grad():
@@ -191,7 +197,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 if (iteration==0 or iteration % (opt.densification_interval*1) == 0) and show_wandb:
                     wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
-                        1.0 - ssim(image, gt_image)).item()}, step=iteration)
+                        1.0 - ssim(image, gt_image)).item(), 
+                        **{kk:vv.item() for kk, vv in depth_loss_dic.items()} }, step=iteration)
                     wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
                                 for param_group in gaussians.optimizer.param_groups}, step=iteration)
                     def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):

@@ -82,6 +82,7 @@ class ModelParams(ParamGroup):
         self.apply_3Dfilter_off = False
         self.colmap_pcd = ""
         self.max_pcd_num = 1e10
+        self.kpt_depth_cache = ""
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -118,6 +119,10 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+
+        self.keypoint_depth_loss_type = "l1"
+        self.keypoint_depth_loss_weight = 0.0
+
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

@@ -14,6 +14,25 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
 
+def keypoint_depth_loss(keypoint_uv, keypoint_depth, depth_map, loss_type='l1'):
+    #depth_map [1,H,W]
+    #keypoint_xy [N,2] -> [1,1,N,2]
+    '''
+    pred_depth = torch.nn.functional.grid_sample(depth_map.unsqueeze(1), #1,1,H,W 
+                                                 keypoint_xy.unsqueeze(0).unsqueeze(0), align_corners=True).view(-1,1) #1,1,1,N->N
+    print(depth_map.shape, keypoint_xy.shape,pred_depth.shape)
+    print(keypoint_xy[0], keypoint_depth[0], pred_depth[0], depth_map[0, int(keypoint_xy[0,1]), int(keypoint_xy[0,0])])
+    print(keypoint_xy[0], keypoint_depth[0], pred_depth[0], depth_map[0, int(keypoint_xy[0,0]), int(keypoint_xy[0,1])])
+    '''
+    # H, W = depth_map.shape[1], depth_map.shape[2]
+    # keypoint_u = torch.clip(((keypoint_xy[:,1]+1)/2 * H).long(),0,H-1)
+    # keypoint_v = torch.clip(((keypoint_xy[:,0]+1)/2 * W).long(),0,W-1)
+    pred_depth = depth_map[0,keypoint_uv[:,0], keypoint_uv[:,1]].view(-1,1)
+    if loss_type == 'l1':
+        return l1_loss(pred_depth, keypoint_depth)
+    elif loss_type == 'l2':
+        return l2_loss(pred_depth, keypoint_depth)
+
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
 
