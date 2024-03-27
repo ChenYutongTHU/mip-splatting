@@ -47,6 +47,8 @@ class CameraDataset(Dataset):
         
         if args.rnd_background and is_training:
             self.bg_color = 'rnd'
+        elif args.transparent_background:
+            self.bg_color = 'transparent' #Use the alpha channel
         elif args.white_background:
             self.bg_color = np.array([1,1,1]) 
         else:
@@ -58,19 +60,26 @@ class CameraDataset(Dataset):
     def __getitem__(self, idx):
         image = Image.open(self.cam_infos[idx].image_path)
         im_data = np.array(image.convert("RGBA"))
-        if type(self.bg_color)==str and self.bg_color == 'rnd':
-            bg = np.random.rand(3)
+        if type(self.bg_color)==str:
+            if self.bg_color == 'rnd':
+                bg = np.random.rand(3)
+            elif self.bg_color == 'transparent':
+                bg = np.zeros(3)
         else:
             bg = self.bg_color
         norm_data = im_data / 255.0
-        arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-        image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+        if type(self.bg_color)==str and self.bg_color == 'transparent':
+            image = image.convert("RGBA")
+        else:
+            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+            image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
         return loadCam(self.args, idx, self.cam_infos[idx], self.resolution_scale, 
                        image=image, data_device='cpu', bg=bg, 
                        point_cloud=self.point_cloud,
-                       kpt_depth_cache=os.path.join(self.kpt_depth_cache, self.cam_infos[idx].image_name+'.pt'))
+                       kpt_depth_cache=os.path.join(self.kpt_depth_cache, self.cam_infos[idx].image_name+'.pt') if self.kpt_depth_cache!="" else "",
+                       dense_depth_cache=os.path.join(self.args.dense_depth_cache, self.cam_infos[idx].image_name+'.pt') if self.args.dense_depth_cache!="" else "",)
     
-def loadCam(args, id, cam_info, resolution_scale, bg, point_cloud, kpt_depth_cache, image=None, data_device=None):
+def loadCam(args, id, cam_info, resolution_scale, bg, point_cloud, kpt_depth_cache, dense_depth_cache, image=None, data_device=None):
     if image is None:
         image = cam_info.image 
         FovY = cam_info.FovY
@@ -103,19 +112,17 @@ def loadCam(args, id, cam_info, resolution_scale, bg, point_cloud, kpt_depth_cac
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
     resized_image_rgb = PILtoTorch(image, resolution)
-
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None
 
-    if resized_image_rgb.shape[1] == 4:
+    if resized_image_rgb.shape[0] == 4:
         loaded_mask = resized_image_rgb[3:4, ...]
-
 
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=FovY, 
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=data_device, bg=bg, 
-                  point_cloud=point_cloud, kpt_depth_cache=kpt_depth_cache,)
+                  point_cloud=point_cloud, kpt_depth_cache=kpt_depth_cache, dense_depth_cache=dense_depth_cache,)
 
 
 def Camera_Collate_fn(batch):
@@ -128,7 +135,8 @@ def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_training, poi
         bg = np.array([1,1,1]) if args.white_background else np.array([0, 0, 0])
         for id, c in tqdm(enumerate(cam_infos)):
             camera_list.append(loadCam(args, id, c, resolution_scale, bg=bg, point_cloud=point_cloud, 
-                                       kpt_depth_cache=os.path.join(args.kpt_depth_cache, c.image_name+'.pt')))
+                                       kpt_depth_cache=os.path.join(args.kpt_depth_cache, c.image_name+'.pt') if args.kpt_depth_cache!="" else "",
+                                       dense_depth_cache=os.path.join(args.dense_depth_cache, c.image_name+'.pt') if args.dense_depth_cache!="" else "",))
         return camera_list
     elif args.dataset_type.lower() == 'loader':
         dataset = CameraDataset(cam_infos, resolution_scale, args, is_training=is_training, point_cloud=point_cloud)

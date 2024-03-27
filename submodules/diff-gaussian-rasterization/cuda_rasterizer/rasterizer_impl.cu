@@ -218,7 +218,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* subpixel_offset,
 	const bool prefiltered,
 	float* out_color,
-	float* out_depth,
+	float* out_depth, float* out_depth_mode,
 	float* out_alpha,
 	int* radii,
 	bool debug)
@@ -339,7 +339,7 @@ int CudaRasterizer::Rasterizer::forward(
 		imgState.n_contrib,
 		background,
 		out_color,
-		out_depth), debug)
+		out_depth, out_depth_mode), debug)
 
 	return num_rendered;
 }

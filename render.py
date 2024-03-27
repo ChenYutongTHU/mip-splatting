@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from PIL import Image
 import numpy as np
+from utils.depth_utils import INF_VALUE
 def visualize_depth_map(depth_map, alpha_map, high=None, low=None):
     alpha_mask = alpha_map > 0.2
     def normalize_depth_map(depth_map, high=None, low=None):
@@ -54,6 +55,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     makedirs(render_path, exist_ok=True)
     makedirs(render_path+'_depth', exist_ok=True)
+    makedirs(render_path+'_depth_mode', exist_ok=True)
     makedirs(render_path+'_alpha', exist_ok=True)
     makedirs(gts_path, exist_ok=True)
 
@@ -77,9 +79,12 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             #     render_pkg['depth'] = render_pkg['depth'][:,h//2:,w//4:3*w//4]
             #     # render_pkg['alpha'] = render_pkg['alpha'][:,h//2:,w//4:3*w//4]
             #     torchvision.utils.save_image(rendering[:,h//2:,w//4:3*w//4], os.path.join(render_path+'_depth', view.image_name + ".png"))
-            depth_viz = visualize_depth_map(render_pkg['depth'].cpu().numpy(), render_pkg['alpha'].cpu().numpy())
-            depth_viz.save(os.path.join(render_path+'_depth', view.image_name + "_depth.png"))
-            torch.save(render_pkg['depth'].cpu(), os.path.join(render_path+'_depth', view.image_name + "_depth.pt"))
+            
+            for depth_key in ['depth','depth_mode']:
+                depth_viz = visualize_depth_map(render_pkg[depth_key].cpu().numpy(), render_pkg['alpha'].cpu().numpy())
+                depth_viz.save(os.path.join(render_path+f'_{depth_key}', view.image_name + f"_{depth_key}.png"))
+                render_pkg[depth_key][render_pkg['alpha']< 0.5] = INF_VALUE
+                torch.save(render_pkg[depth_key].cpu(), os.path.join(render_path+f'_{depth_key}', view.image_name + f"_{depth_key}.pt"))
             alpha_viz = visualize_alpha_map(render_pkg['alpha'].cpu().numpy())
             alpha_viz.save(os.path.join(render_path+'_alpha', view.image_name + "_alpha.png"))
         

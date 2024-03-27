@@ -81,8 +81,10 @@ class ModelParams(ParamGroup):
         self.dataset_sourcetype = "blender" #For Sugar
         self.apply_3Dfilter_off = False
         self.colmap_pcd = ""
-        self.max_pcd_num = 1e10
+        self.max_pcd_num = 1e6
         self.kpt_depth_cache = ""
+        self.dense_depth_cache = ""
+        self.transparent_background = False
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -122,6 +124,15 @@ class OptimizationParams(ParamGroup):
 
         self.keypoint_depth_loss_type = "l1"
         self.keypoint_depth_loss_weight = 0.0
+
+        self.dense_depth_loss_type = "l1" #For blender, with the groundtruth depth-sup, we can directly use l1 loss
+        self.dense_depth_loss_weight = 0.0
+        self.patch_range = [5,17]
+        self.gn_weight = 1
+        self.ln_weight = 0.2
+
+        self.mask_loss_type = 'bce'
+        self.mask_loss_weight = 0.0
 
         super().__init__(parser, "Optimization Parameters")
 

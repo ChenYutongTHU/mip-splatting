@@ -51,7 +51,7 @@ namespace CudaRasterizer
 			const float* subpixel_offset,
 			const bool prefiltered,
 			float* out_color,
-			float* out_depth,
+			float* out_depth, float* out_depth_mode, 
 			float* out_alpha,
 			int* radii = nullptr,
 			bool debug = false);

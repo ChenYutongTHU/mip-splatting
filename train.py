@@ -18,6 +18,7 @@ import random
 from random import randint
 from utils.loss_utils import l1_loss, ssim, keypoint_depth_loss
 from utils.depth_utils import depth_related_loss
+from utils.mask_utils import mask_related_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -160,12 +161,29 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image)
         loss = 0
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        depth_loss_total, depth_loss_dic = depth_related_loss(pred_depth=render_pkg['depth'], 
-                                   keypoint_depth=viewpoint_cam.keypoint_depth, keypoint_uv=viewpoint_cam.keypoint_uv,
-                                   keypoint_depth_loss_weight=opt.keypoint_depth_loss_weight,
-                                   keypoint_depth_loss_type=opt.keypoint_depth_loss_type)
 
-        loss += depth_loss_total
+        if opt.keypoint_depth_loss_weight+opt.dense_depth_loss_weight > 0:
+            depth_loss_total, depth_loss_dic = depth_related_loss(pred_depth=render_pkg['depth'], 
+                                    keypoint_depth=viewpoint_cam.keypoint_depth, keypoint_uv=viewpoint_cam.keypoint_uv,
+                                    keypoint_depth_loss_weight=opt.keypoint_depth_loss_weight,
+                                    keypoint_depth_loss_type=opt.keypoint_depth_loss_type,
+                                    dense_depth=viewpoint_cam.dense_depth, 
+                                    dense_depth_loss_weight=opt.dense_depth_loss_weight,
+                                    dense_depth_loss_type=opt.dense_depth_loss_type,
+                                    patch_range=opt.patch_range, gn_weight=opt.gn_weight, ln_weight=opt.ln_weight)
+
+            loss += depth_loss_total
+        else:
+            depth_loss_dic = {}
+        
+        if opt.mask_loss_weight > 0:
+            mask_loss, mask_loss_dic = mask_related_loss(
+                pred_mask=render_pkg['alpha'], gt_mask=viewpoint_cam.gt_alpha_mask,
+                loss_type=opt.mask_loss_type, loss_weight=opt.mask_loss_weight)
+            loss += mask_loss
+        else:
+            mask_loss_dic = {}
+
         loss.backward()
         iter_end.record()
 
@@ -198,7 +216,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if (iteration==0 or iteration % (opt.densification_interval*1) == 0) and show_wandb:
                     wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
                         1.0 - ssim(image, gt_image)).item(), 
-                        **{kk:vv.item() for kk, vv in depth_loss_dic.items()} }, step=iteration)
+                        **{kk:vv.item() for kk, vv in depth_loss_dic.items()},
+                        **{kk:vv.item() for kk, vv in mask_loss_dic.items()} }, step=iteration)
                     wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
                                 for param_group in gaussians.optimizer.param_groups}, step=iteration)
                     def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
@@ -392,7 +411,7 @@ if __name__ == "__main__":
     if args.wandb:
         import wandb
         wandb_run = wandb.init(project="gaussian", config=args, dir=args.model_path) #resume=?
-        wandb.run.name = 'mipGS_'+args.model_path.split("/")[-1]
+        wandb.run.name = 'mipGS_'+os.path.basename(args.model_path)
         wandb.config.update(args, ) #notes=, tag=['','']
 
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
