@@ -45,7 +45,7 @@ class Scene:
                                                            blender_train_json=args.blender_train_json,
                                                            blender_test_jsons=args.blender_test_jsons, dataset_type=args.dataset_type,
                                                            blender_bbox=args.blender_bbox,
-                                                           sample_from_pcd=args.sample_from_pcd,
+                                                           sample_from_pcd=args.sample_from_pcd, gt_pcd=args.gt_pcd,
                                                            max_pcd_num=args.max_pcd_num,)    
         elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
@@ -83,6 +83,7 @@ class Scene:
             random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
             # random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
 
+        self.point_cloud_complete = scene_info.point_cloud_complete
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
         self.train_cameras = {}
@@ -111,7 +112,7 @@ class Scene:
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent, args.pcd_init_scale_factor)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

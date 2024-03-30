@@ -78,6 +78,7 @@ class ModelParams(ParamGroup):
         self.eval_test_interval = 14 
         self.eval_train_interval = -1
         self.sample_from_pcd = ""
+        self.gt_pcd = ""
         self.dataset_sourcetype = "blender" #For Sugar
         self.apply_3Dfilter_off = False
         self.colmap_pcd = ""
@@ -85,6 +86,7 @@ class ModelParams(ParamGroup):
         self.kpt_depth_cache = ""
         self.dense_depth_cache = ""
         self.transparent_background = False
+        self.pcd_init_scale_factor = 1.0
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -133,6 +135,14 @@ class OptimizationParams(ParamGroup):
 
         self.mask_loss_type = 'bce'
         self.mask_loss_weight = 0.0
+
+        self.pcd_loss_weight = 0.0
+        self.chamfer_n = 100000
+        # self.freeze_xyz = False
+        self.only_color = False
+        self.only_color_scale = False
+        self.only_pcd_debug = False
+        self.cd_sample_type = 'mean'
 
         super().__init__(parser, "Optimization Parameters")
 

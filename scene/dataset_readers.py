@@ -24,6 +24,7 @@ from utils.sh_utils import SH2RGB
 import math
 from tqdm import tqdm
 from scene.gaussian_model import BasicPointCloud
+import torch
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -40,6 +41,7 @@ class CameraInfo(NamedTuple):
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
+    point_cloud_complete: np.array
     train_cameras: list
     test_cameras: list
     nerf_normalization: dict
@@ -291,7 +293,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, transparen
 def readNerfSyntheticInfo(path, white_background, transparent_background, eval, extension=".png",train_num_camera_ratio=1, 
                         blender_train_json=None,
                         blender_test_jsons=None, dataset_type="list", blender_bbox=[1.3],
-                        sample_from_pcd='',max_pcd_num=100_000):
+                        sample_from_pcd='',max_pcd_num=100_000, gt_pcd=''):
     
     train_json_file = blender_train_json if blender_train_json is not None else "transforms_train.json"
     print(f"Reading Training Transforms from {train_json_file} ", end=' ')
@@ -317,9 +319,18 @@ def readNerfSyntheticInfo(path, white_background, transparent_background, eval, 
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
+    if gt_pcd != '':
+        plydata = PlyData.read(gt_pcd)
+        vertices = plydata['vertex']
+        xyz_complete = np.vstack(
+            [vertices['x'], vertices['y'], vertices['z']]).T
+        xyz_complete = torch.from_numpy(xyz_complete).float()
+        print(f"Reading ground truth point cloud from {gt_pcd}...", xyz_complete.shape)
+    else:
+        xyz_complete = None
     ply_path = os.path.join(path, "points3d.ply")
     if not os.path.exists(ply_path):
-        num_pts = max_pcd_num
+        num_pts = int(max_pcd_num)
         if sample_from_pcd != '':
             plydata = PlyData.read(sample_from_pcd)
             vertices = plydata['vertex']
@@ -337,7 +348,6 @@ def readNerfSyntheticInfo(path, white_background, transparent_background, eval, 
         # Since this data set has no colmap data, we start with random points
         else:
             print(f"Generating random point cloud ({num_pts})...")
-            
             # We create random points inside the bounds of the synthetic Blender scenes
             if len(blender_bbox)==1:
                 radius = blender_bbox[0]
@@ -360,6 +370,7 @@ def readNerfSyntheticInfo(path, white_background, transparent_background, eval, 
 
 
     scene_info = SceneInfo(point_cloud=pcd,
+                           point_cloud_complete=xyz_complete,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,

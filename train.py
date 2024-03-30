@@ -17,6 +17,7 @@ import torch
 import random
 from random import randint
 from utils.loss_utils import l1_loss, ssim, keypoint_depth_loss
+from utils.pcd_utils import chamfer_loss
 from utils.depth_utils import depth_related_loss
 from utils.mask_utils import mask_related_loss
 from gaussian_renderer import render, network_gui
@@ -150,18 +151,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         else:
             subpixel_offset = None
         background = torch.tensor(viewpoint_cam.bg,device='cuda',dtype=torch.float32) 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size=dataset.kernel_size, subpixel_offset=subpixel_offset)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         # Loss
-        gt_image = viewpoint_cam.original_image.cuda()
-        # sample gt_image with subpixel offset
-        if dataset.resample_gt_image:
-            gt_image = create_offset_gt(gt_image, subpixel_offset)
-
-        Ll1 = l1_loss(image, gt_image)
         loss = 0
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-
+        gt_image = viewpoint_cam.original_image.cuda()
+        if not opt.only_pcd_debug:
+            if opt.only_color:
+                gaussians.detach_everything_but_color()
+            if opt.only_color_scale:
+                gaussians.detach_everything_but_color_scale()
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size=dataset.kernel_size, subpixel_offset=subpixel_offset)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            # sample gt_image with subpixel offset
+            if dataset.resample_gt_image:
+                gt_image = create_offset_gt(gt_image, subpixel_offset)
+            Ll1 = l1_loss(image, gt_image)
+            loss += (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        else:
+            Ll1 = torch.tensor(0.)
         if opt.keypoint_depth_loss_weight+opt.dense_depth_loss_weight > 0:
             depth_loss_total, depth_loss_dic = depth_related_loss(pred_depth=render_pkg['depth'], 
                                     keypoint_depth=viewpoint_cam.keypoint_depth, keypoint_uv=viewpoint_cam.keypoint_uv,
@@ -184,6 +190,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         else:
             mask_loss_dic = {}
 
+        if opt.pcd_loss_weight > 0:
+            scene.point_cloud_complete = scene.point_cloud_complete.to("cuda")
+            if opt.cd_sample_type == 'mean':
+                pcd_loss = chamfer_loss(gaussians._xyz, scene.point_cloud_complete, opt.chamfer_n)* opt.pcd_loss_weight
+            elif opt.cd_sample_type == 'gaussian':
+                xyz = gaussians.sample_points_from_gaussians(opt.chamfer_n)
+                pcd_loss = chamfer_loss(xyz, scene.point_cloud_complete, opt.chamfer_n)* opt.pcd_loss_weight
+            loss += pcd_loss
+            pcd_loss_dic = {"pcd_loss": pcd_loss}
+
         loss.backward()
         iter_end.record()
 
@@ -204,8 +220,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
-            # Densification
 
+            if show_wandb and iteration % 100 == 0:
+                wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
+                    1.0 - ssim(image, gt_image)).item() if not opt.only_pcd_debug else 0.0, 
+                    **{kk:vv.item() for kk, vv in depth_loss_dic.items()},
+                    **{kk:vv.item() for kk, vv in mask_loss_dic.items()},
+                    **{kk:vv.item() for kk, vv in pcd_loss_dic.items()}, }, step=iteration)
+                wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
+                            for param_group in gaussians.optimizer.param_groups}, step=iteration)
                 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -214,12 +237,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if (iteration==0 or iteration % (opt.densification_interval*1) == 0) and show_wandb:
-                    wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
-                        1.0 - ssim(image, gt_image)).item(), 
-                        **{kk:vv.item() for kk, vv in depth_loss_dic.items()},
-                        **{kk:vv.item() for kk, vv in mask_loss_dic.items()} }, step=iteration)
-                    wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
-                                for param_group in gaussians.optimizer.param_groups}, step=iteration)
                     def wandb_percentile(data, name, step, percentiles=[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]):
                         data = sorted(data.detach().cpu().numpy())
                         N = len(data)

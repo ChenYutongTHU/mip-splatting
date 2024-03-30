@@ -143,6 +143,48 @@ class GaussianModel:
         coef = torch.sqrt(det1 / det2)
         return opacity * coef[..., None]
 
+    def detach_everything_but_color(self):
+        self._xyz = self._xyz.detach()
+        #self._features_dc = self._features_dc.detach()
+        #self._features_rest = self._features_rest.detach()
+        self._scaling = self._scaling.detach()
+        self._rotation = self._rotation.detach()
+        #self._opacity = self._opacity.detach()
+        self.max_radii2D = self.max_radii2D.detach()
+
+    def detach_everything_but_color_scale(self):
+        self._xyz = self._xyz.detach()
+        #self._features_dc = self._features_dc.detach()
+        #self._features_rest = self._features_rest.detach()
+        #self._scaling = self._scaling.detach()
+        self._rotation = self._rotation.detach()
+        #self._opacity = self._opacity.detach()
+        self.max_radii2D = self.max_radii2D.detach()
+
+    def sample_points_from_gaussians(self, num_points):
+        xyz = self.get_xyz
+        features = self.get_features
+        scales = self.get_scaling
+        rotation = self.get_rotation
+        rotation = build_rotation(rotation)
+        opacities = self.get_opacity
+
+        volumes = scales.prod(dim=1) #
+        #First sample gaussians according to their volumes
+        volumes = volumes / volumes.sum()
+        gs_id = torch.multinomial(volumes, num_points, replacement=True)
+        xyz = xyz[gs_id]
+        scales = scales[gs_id]
+        rotation = rotation[gs_id]
+
+        # sample points from gaussian
+        samples = torch.normal(mean=torch.zeros((num_points, 3), device="cuda"), std=1.0)
+        samples = torch.bmm(rotation, samples.unsqueeze(-1)).squeeze(-1) * scales + xyz
+        # features = features.repeat(1, num_points).view(-1, features.shape[1])
+        # opacities = opacities.repeat(1, num_points).view(-1, 1)
+
+        return samples#, features, opacities
+
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
@@ -209,7 +251,7 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+    def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float, pcd_init_scale_factor: float=1.0):
         self.spatial_lr_scale = spatial_lr_scale
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
@@ -220,6 +262,7 @@ class GaussianModel:
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
         dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
+        dist2 *= pcd_init_scale_factor
         scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1

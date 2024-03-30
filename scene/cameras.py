@@ -37,6 +37,7 @@ class Camera(nn.Module):
         self.image_name = image_name
         self.bg = bg
         self.kpt_depth_cache = kpt_depth_cache
+        # self.point_cloud = torch.tensor(point_cloud)
 
         try:
             self.data_device = torch.device(data_device)
