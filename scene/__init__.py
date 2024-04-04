@@ -29,10 +29,12 @@ class Scene:
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
-
-        if load_iteration:
+        if load_iteration is not None:
+            print("="*10)
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
+            elif load_iteration == -2:
+                self.loaded_iter = None
             else:
                 self.loaded_iter = load_iteration
             print("Loading trained model at iteration {}".format(self.loaded_iter))
@@ -61,7 +63,7 @@ class Scene:
         else:
             assert False, "Could not recognize scene type!"
 
-        if not self.loaded_iter:
+        if self.loaded_iter is None:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                 dest_file.write(src_file.read())
             json_cams = []
@@ -106,7 +108,7 @@ class Scene:
                     self.test_cameras[key][resolution_scale] = cameraList_from_camInfos(value, resolution_scale, args, is_training=False, point_cloud=scene_info.point_cloud.points)
                     print("Loading Test Cameras", f"Length of {key}: {len(self.test_cameras[key][resolution_scale])}")
 
-        if self.loaded_iter:
+        if self.loaded_iter is not None:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),

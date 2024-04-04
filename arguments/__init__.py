@@ -37,7 +37,7 @@ class ParamGroup:
                 if t == bool:
                     group.add_argument("--" + key, default=value, action="store_true")
                 elif t == list:
-                    group.add_argument("--" + key, ("-" + key[0:1]), default=value, nargs="+")
+                    group.add_argument("-load_iteration-" + key, ("-" + key[0:1]), default=value, nargs="+")
                 else:
                     group.add_argument("--" + key, default=value, type=t)
 
@@ -87,6 +87,9 @@ class ModelParams(ParamGroup):
         self.dense_depth_cache = ""
         self.transparent_background = False
         self.pcd_init_scale_factor = 1.0
+
+        self.load_mesh = "" #It should be a .obj file
+        self.load_iteration = -2
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -143,6 +146,12 @@ class OptimizationParams(ParamGroup):
         self.only_color_scale = False
         self.only_pcd_debug = False
         self.cd_sample_type = 'mean'
+
+        #Used for loaded mesh
+        self.mesh_mask_loss_weight = 0.0
+        self.novelview_near_far = [1.5, 3]
+        self.novelview_angle_factor = 1.5
+
 
         super().__init__(parser, "Optimization Parameters")
 

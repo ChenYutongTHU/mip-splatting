@@ -116,6 +116,16 @@ class GaussianModel:
         return self.rotation_activation(self._rotation)
     
     @property
+    def get_scene_center(self):
+        return self._xyz.mean(dim=0) #(3,)
+    
+    @property
+    def get_scene_radius(self):
+        dist = torch.norm((self._xyz-self.get_scene_center), dim=1) #(N)
+        radius = torch.quantile(dist, q=0.8)
+        return radius
+
+    @property
     def get_xyz(self):
         return self._xyz
     
@@ -161,6 +171,30 @@ class GaussianModel:
         #self._opacity = self._opacity.detach()
         self.max_radii2D = self.max_radii2D.detach()
 
+    def sample_points_from_gaussians_with_ids(self, num_points):
+        xyz = self.get_xyz
+        features = self.get_features
+        scales = self.get_scaling
+        rotation = self.get_rotation
+        rotation = build_rotation(rotation)
+        opacities = self.get_opacity
+
+        volumes = scales.prod(dim=1) #
+        #First sample gaussians according to their volumes
+        volumes = volumes / volumes.sum()
+        gs_id = torch.multinomial(volumes, num_points, replacement=True)
+        xyz = xyz[gs_id]
+        scales = scales[gs_id]
+        rotation = rotation[gs_id]
+
+        # sample points from gaussian
+        samples = torch.normal(mean=torch.zeros((num_points, 3), device="cuda"), std=1.0)
+        samples = torch.bmm(rotation, samples.unsqueeze(-1)).squeeze(-1) * scales + xyz
+        # features = features.repeat(1, num_points).view(-1, features.shape[1])
+        # opacities = opacities.repeat(1, num_points).view(-1, 1)
+
+        return samples, gs_id
+    
     def sample_points_from_gaussians(self, num_points):
         xyz = self.get_xyz
         features = self.get_features

@@ -19,8 +19,106 @@ from torch.utils.data import DataLoader, Dataset
 from PIL import Image
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
 import os
-
+from pytorch3d.renderer import FoVPerspectiveCameras
+from utils.graphics_utils import getWorld2View
 WARNED = False
+
+def sample_new_camera(scene_center, scene_radius, near, far, angle_factor, camera_like):
+    #Step1: Sample camera position uniformly on a sphere
+    theta = np.random.rand() * 2 * np.pi
+    phi = np.random.rand() * np.pi
+    r = np.random.rand() * (far - near) + near
+    x = r * np.sin(phi) * np.cos(theta)
+    y = r * np.sin(phi) * np.sin(theta)
+    z = r * np.cos(phi)
+    camera_center = np.array([x, y, z]) + scene_center 
+
+    #Step2: Sample where the camera faces towards
+    #Sample in the sphere of (scene_center, scene_radius)
+    theta = np.random.rand() * 2 * np.pi
+    phi = np.random.rand() * np.pi
+    r = np.random.rand() * scene_radius * angle_factor
+    x = r * np.sin(phi) * np.cos(theta)
+    y = r * np.sin(phi) * np.sin(theta)
+    z = r * np.cos(phi)
+    scene_center = np.array([x, y, z]) + scene_center
+    z_axis = scene_center - camera_center
+
+    #Step3: Sample camera orientation
+    #First face the camera towards the scene center
+    z_axis = z_axis / np.linalg.norm(z_axis)
+    c2w_R = np.eye(3)
+    c2w_R[:, 2] = z_axis
+    c2w_R[:, 0] = np.cross(np.array([0, 0, 1]), z_axis)
+    c2w_R[:, 0] = c2w_R[:, 0] / np.linalg.norm(c2w_R[:, 0])
+    c2w_R[:, 1] = np.cross(z_axis, c2w_R[:, 0])
+    #Then rotate the camera randomly around the z_axis
+    theta = np.random.rand() * 2 * np.pi
+    R_around_z = np.array([[np.cos(theta), -np.sin(theta), 0],  
+                  [np.sin(theta), np.cos(theta), 0], 
+                  [0, 0, 1]])
+    c2w_R = c2w_R@R_around_z
+    c2w_T = camera_center
+    
+    c2w = np.eye(4)
+    c2w[:3, :3] = c2w_R
+    c2w[:3, 3] = c2w_T
+    w2c = np.linalg.inv(c2w)
+    w2c_R_t = w2c[:3, :3].transpose()
+    w2c_T = w2c[:3, 3]
+    #The R and T will be forwarded to graphics_utils.getWorld2View2 
+    camera_for_GSras = Camera(colmap_id=camera_like.colmap_id, R=w2c_R_t, T=w2c_T,
+                    FoVx=camera_like.FoVx, 
+                    FoVy=camera_like.FoVy, 
+                    image=None, gt_alpha_mask=None,
+                    image_name=None, uid=0, data_device='cuda', 
+                    width0=camera_like.image_width, height0=camera_like.image_height, 
+                    point_cloud=None, 
+                    kpt_depth_cache="") 
+    
+    #For pytorch3D, we also need transposed R
+    c2w_flipobj = np.array([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]]).dot(c2w) #WE NEED TO FLIP THE LOADED OBJ
+    w2c_flipobj = np.linalg.inv(c2w_flipobj)
+    w2c_t3d_flipobj = np.array([[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1]]).dot(w2c_flipobj) #Pytorch3D the camera coordinate is different
+    R = w2c_t3d_flipobj[:3, :3].T
+    T = w2c_t3d_flipobj[:3, 3]
+    device = camera_like.data_device
+    camera_for_3dras = FoVPerspectiveCameras(device=device, 
+                                R=torch.tensor(R,dtype=torch.float32,device=device).unsqueeze(0),
+                                T=torch.tensor(T,dtype=torch.float32,device=device).unsqueeze(0),
+                                fov=camera_like.FoVx, 
+                                degrees=False)
+    '''
+
+    print(camera_like.T, camera_like.T)
+    print('='*5)
+    print(w2c_R_t, w2c_T)
+    camera_for_GSras = Camera(colmap_id=camera_like.colmap_id,
+            R = camera_like.R,
+            T = camera_like.T,
+            FoVx=camera_like.FoVx, 
+            FoVy=camera_like.FoVy, 
+            image=None, gt_alpha_mask=None,
+            image_name=None, uid=0, data_device='cuda', 
+            width0=camera_like.image_width, height0=camera_like.image_height, 
+            point_cloud=None, 
+            kpt_depth_cache="")   
+    w2c_GSras = getWorld2View(camera_like.R, camera_like.T)
+    c2w = np.linalg.inv(w2c_GSras)
+    c2w = np.array([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]]).dot(c2w) #WE NEED TO FLIP THE LOADED OBJ
+    w2c = np.linalg.inv(c2w)
+    w2c_t3d = np.array([[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1]]).dot(w2c) #Pytorch3D the camera coordinate is different
+    R = w2c_t3d[:3, :3].T
+    T = w2c_t3d[:3, 3]
+    camera_for_3dras = FoVPerspectiveCameras(device=device, 
+                                R=torch.tensor(R, device=device).unsqueeze(0),
+                                T=torch.tensor(T, device=device).unsqueeze(0),
+                                fov=camera_like.FoVx, 
+                                degrees=False)
+    '''
+    return camera_for_GSras, camera_for_3dras
+    
+        
 
 class CameraDataset(Dataset):
     def __init__(self, cam_infos, resolution_scale, args, is_training, point_cloud):
@@ -149,7 +247,7 @@ def camera_to_JSON(id, camera : Camera):
     Rt[:3, 3] = camera.T
     Rt[3, 3] = 1.0
 
-    W2C = np.linalg.inv(Rt)
+    W2C = np.linalg.inv(Rt) #It should be C2W here?
     pos = W2C[:3, 3]
     rot = W2C[:3, :3]
     serializable_array_2d = [x.tolist() for x in rot]
