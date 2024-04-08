@@ -32,6 +32,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 from tqdm import tqdm 
 import wandb 
 from PIL import Image
+from utils.camera_utils import sample_new_camera
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -58,7 +59,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic)
-    scene = Scene(dataset, gaussians)
+    print('+------------------------------------+'+str(dataset.load_iteration))
+    scene = Scene(dataset, gaussians, load_iteration=dataset.load_iteration)
+
+    if dataset.load_mesh != '':
+        from utils.mesh_utils import Mesh
+        mesh = Mesh(dataset.load_mesh)
+    else:
+        mesh = None
+
     gaussians.training_setup(opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -153,6 +162,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         background = torch.tensor(viewpoint_cam.bg,device='cuda',dtype=torch.float32) 
         # Loss
         loss = 0
+        loss_dic = {}
         gt_image = viewpoint_cam.original_image.cuda()
         if not opt.only_pcd_debug:
             if opt.only_color:
@@ -165,7 +175,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if dataset.resample_gt_image:
                 gt_image = create_offset_gt(gt_image, subpixel_offset)
             Ll1 = l1_loss(image, gt_image)
-            loss += (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            loss_dic = {'Ll1': (1.0 - opt.lambda_dssim) * Ll1, 'l-ssim':opt.lambda_dssim * (1.0 - ssim(image, gt_image))}
+            loss += loss_dic['Ll1']+loss_dic['l-ssim']
         else:
             Ll1 = torch.tensor(0.)
         if opt.keypoint_depth_loss_weight+opt.dense_depth_loss_weight > 0:
@@ -179,16 +190,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                     patch_range=opt.patch_range, gn_weight=opt.gn_weight, ln_weight=opt.ln_weight)
 
             loss += depth_loss_total
-        else:
-            depth_loss_dic = {}
+            loss_dic = {**loss_dic, **depth_loss_dic}
         
         if opt.mask_loss_weight > 0:
             mask_loss, mask_loss_dic = mask_related_loss(
                 pred_mask=render_pkg['alpha'], gt_mask=viewpoint_cam.gt_alpha_mask,
                 loss_type=opt.mask_loss_type, loss_weight=opt.mask_loss_weight)
             loss += mask_loss
-        else:
-            mask_loss_dic = {}
+            loss_dic = {**loss_dic, **mask_loss_dic}
 
         if opt.pcd_loss_weight > 0:
             scene.point_cloud_complete = scene.point_cloud_complete.to("cuda")
@@ -198,7 +207,41 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 xyz = gaussians.sample_points_from_gaussians(opt.chamfer_n)
                 pcd_loss = chamfer_loss(xyz, scene.point_cloud_complete, opt.chamfer_n)* opt.pcd_loss_weight
             loss += pcd_loss
-            pcd_loss_dic = {"pcd_loss": pcd_loss}
+            loss_dic = {**loss_dic, 'pcd_loss':pcd_loss}
+        
+        if opt.self_cd_loss_weight > 0:
+            xyz1 = gaussians.sample_points_from_gaussians(opt.chamfer_n)
+            xyz2 = gaussians.sample_points_from_gaussians(opt.chamfer_n)
+            self_cd_loss = chamfer_loss(xyz1, xyz2, opt.chamfer_n)* opt.self_cd_loss_weight
+            loss += self_cd_loss
+            loss_dic = {**loss_dic, 'self_cd_loss':self_cd_loss}
+        
+        if mesh is not None:
+            if opt.mesh_mask_loss_weight > 0:
+                novel_viewpoint_cam, torch3d_camera = sample_new_camera(
+                    scene_center=gaussians.get_scene_center.cpu().detach().numpy(),
+                    scene_radius=gaussians.get_scene_radius.cpu().detach().numpy(),
+                    near=float(opt.novelview_near_far[0]),
+                    far=float(opt.novelview_near_far[1]),
+                    angle_factor=opt.novelview_angle_factor,
+                    camera_like = viewpoint_cam
+                )
+                torch3d_mask = mesh.render_hard_mask(torch3d_camera).squeeze().float() #H,W,1 -Turn hard to soft
+                novel_render_pkg = render(novel_viewpoint_cam, gaussians, pipe, background, kernel_size=dataset.kernel_size, subpixel_offset=subpixel_offset)
+                gs_mask = novel_render_pkg['alpha'].squeeze()
+                mesh_mask_loss, _ = mask_related_loss(
+                    pred_mask=gs_mask, gt_mask=torch3d_mask,
+                    loss_type=opt.mask_loss_type, loss_weight=opt.mesh_mask_loss_weight)
+                loss_dic.update({'mesh_mask_loss': mesh_mask_loss})
+                loss += mesh_mask_loss
+                # def save_mask(m, path):
+                #     m = m.cpu().detach().numpy()
+                #     m = ((m*255).astype(np.uint8)).squeeze()
+                #     Image.fromarray(m).save(path)
+                # save_mask(torch3d_mask, 'torch3d_mask.png')
+                # save_mask(gs_mask, 'torch_gs_mask.png')
+                # import ipdb; ipdb.set_trace()
+            
 
         loss.backward()
         iter_end.record()
@@ -222,11 +265,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 scene.save(iteration)
 
             if show_wandb and iteration % 100 == 0:
-                wandb.log({"loss": loss.item(), "loss_l1": Ll1.item(), "loss_ssim": (
-                    1.0 - ssim(image, gt_image)).item() if not opt.only_pcd_debug else 0.0, 
-                    **{kk:vv.item() for kk, vv in depth_loss_dic.items()},
-                    **{kk:vv.item() for kk, vv in mask_loss_dic.items()},
-                    **{kk:vv.item() for kk, vv in pcd_loss_dic.items()}, }, step=iteration)
+                wandb.log({"loss": loss.item(),
+                    **{kk:vv.item() for kk, vv in loss_dic.items()}, }, step=iteration)
                 wandb.log({"learning_rate/"+param_group["name"]:   param_group["lr"]
                             for param_group in gaussians.optimizer.param_groups}, step=iteration)
                 

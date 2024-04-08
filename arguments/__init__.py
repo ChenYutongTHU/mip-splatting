@@ -152,6 +152,7 @@ class OptimizationParams(ParamGroup):
         self.novelview_near_far = [1.5, 3]
         self.novelview_angle_factor = 1.5
 
+        self.self_cd_loss_weight = 0.0
 
         super().__init__(parser, "Optimization Parameters")
 
