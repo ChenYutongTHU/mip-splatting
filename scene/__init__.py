@@ -42,7 +42,7 @@ class Scene:
         if args.blender_train_json != '':
             print(f"blender_train_json={args.blender_train_json}, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, 
-                                                           args.white_background, args.transparent_background,
+                                                           args.white_background, True, #HARD CODE
                                                            args.eval, train_num_camera_ratio=args.train_num_camera_ratio, 
                                                            blender_train_json=args.blender_train_json,
                                                            blender_test_jsons=args.blender_test_jsons, dataset_type=args.dataset_type,

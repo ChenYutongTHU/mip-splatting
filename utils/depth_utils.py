@@ -81,18 +81,18 @@ def depth_related_loss(pred_depth, keypoint_uv, keypoint_depth, dense_depth,
 
 
 
-#https://github.com/VITA-Group/FSGS/blob/main/utils/depth_utils.py
-import torch
-midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid")
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-midas.to(device)
-midas.eval()
-for param in midas.parameters():
-    param.requires_grad = False
+# #https://github.com/VITA-Group/FSGS/blob/main/utils/depth_utils.py
+# import torch
+# midas = torch.hub.load("intel-isl/MiDaS", "DPT_Hybrid")
+# device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+# midas.to(device)
+# midas.eval()
+# for param in midas.parameters():
+#     param.requires_grad = False
 
-midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-transform = midas_transforms.dpt_transform
-downsampling = 1
+# midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
+# transform = midas_transforms.dpt_transform
+# downsampling = 1
 
 def estimate_depth(img, mode='test'):
     h, w = img.shape[1:3]
