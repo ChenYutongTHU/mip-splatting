@@ -215,6 +215,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_n
         pcd = None
 
     scene_info = SceneInfo(point_cloud=pcd,
+                           point_cloud_complete=None,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
@@ -284,7 +285,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, transparen
                 FovY = focal2fov(fov2focal(fovx, width), height)
                 FovX = fovx
 
-
+        
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T,FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=width, height=height, white_background=white_background))
             

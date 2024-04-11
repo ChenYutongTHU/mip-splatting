@@ -2,6 +2,8 @@ make_video*
 requirements.txt
 
 output_atlas
+output_euler
+slurm_output
 pcd
 *.pyc
 scripts

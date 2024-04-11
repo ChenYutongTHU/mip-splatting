@@ -154,6 +154,13 @@ class OptimizationParams(ParamGroup):
 
         self.self_cd_loss_weight = 0.0
 
+        self.smooth_xyz_weight = 0.0
+        self.smooth_opacity_weight = 0.0
+        self.smooth_cov_weight = 0.0
+        self.smooth_color_weight = 0.0
+        self.smooth_loss_type = 'laplacian'
+        self.n_neighbours = 5
+
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

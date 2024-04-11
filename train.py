@@ -19,6 +19,7 @@ from utils.loss_utils import l1_loss, ssim, keypoint_depth_loss
 from utils.pcd_utils import chamfer_loss
 from utils.depth_utils import depth_related_loss
 from utils.mask_utils import mask_related_loss
+from utils.smooth_utils import smooth_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -215,6 +216,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss += self_cd_loss
             loss_dic = {**loss_dic, 'self_cd_loss':self_cd_loss}
         
+        if opt.smooth_xyz_weight + opt.smooth_opacity_weight + opt.smooth_cov_weight + opt.smooth_color_weight > 0:
+            smooth_loss_value, smooth_loss_dic = smooth_loss(gaussians, opt.smooth_loss_type, opt.n_neighbours, 
+                                                            opt.smooth_xyz_weight, opt.smooth_opacity_weight, opt.smooth_cov_weight, opt.smooth_color_weight)
+            loss += smooth_loss_value
+            loss_dic = {**loss_dic, **smooth_loss_dic}
         if mesh is not None:
             if opt.mesh_mask_loss_weight > 0:
                 novel_viewpoint_cam, torch3d_camera = sample_new_camera(
