@@ -171,7 +171,7 @@ class GaussianModel:
         #self._opacity = self._opacity.detach()
         self.max_radii2D = self.max_radii2D.detach()
 
-    def sample_points_from_gaussians_with_ids(self, num_points):
+    def sample_points_from_gaussians_with_ids(self, num_points, proportional_to_opacity=False):
         xyz = self.get_xyz
         features = self.get_features
         scales = self.get_scaling
@@ -182,6 +182,8 @@ class GaussianModel:
         volumes = scales.prod(dim=1) #
         #First sample gaussians according to their volumes
         volumes = volumes / volumes.sum()
+        if proportional_to_opacity:
+            volumes = volumes * opacities.squeeze()
         gs_id = torch.multinomial(volumes, num_points, replacement=True)
         xyz = xyz[gs_id]
         scales = scales[gs_id]
@@ -195,7 +197,7 @@ class GaussianModel:
 
         return samples, gs_id
     
-    def sample_points_from_gaussians(self, num_points):
+    def sample_points_from_gaussians(self, num_points, proportional_to_opacity=False):
         xyz = self.get_xyz
         features = self.get_features
         scales = self.get_scaling
@@ -205,7 +207,9 @@ class GaussianModel:
 
         volumes = scales.prod(dim=1) #
         #First sample gaussians according to their volumes
-        volumes = volumes / volumes.sum()
+        volumes = volumes / volumes.sum() #N
+        if proportional_to_opacity:
+            volumes = volumes * opacities.squeeze()
         gs_id = torch.multinomial(volumes, num_points, replacement=True)
         xyz = xyz[gs_id]
         scales = scales[gs_id]

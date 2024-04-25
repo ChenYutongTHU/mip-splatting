@@ -25,6 +25,9 @@ import math
 from tqdm import tqdm
 from scene.gaussian_model import BasicPointCloud
 import torch
+from pytorch3d.io import load_obj
+from pytorch3d.structures import Meshes, Pointclouds
+from pytorch3d.loss import point_mesh_face_distance
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -42,6 +45,7 @@ class CameraInfo(NamedTuple):
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
     point_cloud_complete: np.array
+    mesh: Meshes
     train_cameras: list
     test_cameras: list
     nerf_normalization: dict
@@ -102,7 +106,10 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder, dataset_typ
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
         if dataset_type.lower() == 'list':
-            image = Image.open(image_path)
+            try:
+                image = Image.open(image_path)
+            except:
+                continue  #Some images may be deleted and are excluded in split files
         else:
             image = None
 
@@ -216,13 +223,14 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, split_file=None, train_n
 
     scene_info = SceneInfo(point_cloud=pcd,
                            point_cloud_complete=None,
+                           mesh= None,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path)
     return scene_info
 
-def readCamerasFromTransforms(path, transformsfile, white_background, transparent_background, extension=".png", train_num_camera_ratio=1, dataset_type="list"):
+def readCamerasFromTransforms(path, transformsfile, white_background, transparent_background=False, extension=".png", train_num_camera_ratio=1, dataset_type="list"):
     cam_infos = []
 
     with open(os.path.join(path, transformsfile)) as json_file:
@@ -230,6 +238,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, transparen
         fovx = contents.get("camera_angle_x", None)
 
         frames = contents["frames"]
+        train_num_camera_ratio = float(train_num_camera_ratio)
         if train_num_camera_ratio!=1:
             step = math.floor(1/train_num_camera_ratio)
             frames = frames[::step]
@@ -294,7 +303,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, transparen
 def readNerfSyntheticInfo(path, white_background, transparent_background, eval, extension=".png",train_num_camera_ratio=1, 
                         blender_train_json=None,
                         blender_test_jsons=None, dataset_type="list", blender_bbox=[1.3],
-                        sample_from_pcd='',max_pcd_num=100_000, gt_pcd=''):
+                        sample_from_pcd='',max_pcd_num=100_000, gt_pcd='', gt_mesh=''):
     
     train_json_file = blender_train_json if blender_train_json is not None else "transforms_train.json"
     print(f"Reading Training Transforms from {train_json_file} ", end=' ')
@@ -329,18 +338,31 @@ def readNerfSyntheticInfo(path, white_background, transparent_background, eval, 
         print(f"Reading ground truth point cloud from {gt_pcd}...", xyz_complete.shape)
     else:
         xyz_complete = None
+    
+    if gt_mesh != '':
+        verts, faces, aux = load_obj(gt_mesh)
+        meshes = Meshes(verts=[verts], faces=[faces.verts_idx])
+        print(f"Reading ground truth mesh from {gt_mesh}...", verts.shape, faces.verts_idx.shape)
+    else:
+        meshes = None
+
     ply_path = os.path.join(path, "points3d.ply")
     if not os.path.exists(ply_path):
         num_pts = int(max_pcd_num)
         if sample_from_pcd != '':
-            plydata = PlyData.read(sample_from_pcd)
-            vertices = plydata['vertex']
-            xyz = np.vstack(
-                [vertices['x'], vertices['y'], vertices['z']]).T
-            num_pts = min(num_pts, xyz.shape[0])
-            sample_indices = np.random.choice(xyz.shape[0], size=[num_pts], replace=False)
-            xyz = xyz[sample_indices,:]
-            print(f"Sampling {num_pts} points from {sample_from_pcd}...")
+            if sample_from_pcd == 'from_mesh':
+                print(f"Sampling {num_pts} points from {gt_mesh}...")
+                from pytorch3d.ops import sample_points_from_meshes
+                xyz = sample_points_from_meshes(meshes, num_pts)[0]
+            else:
+                plydata = PlyData.read(sample_from_pcd)
+                vertices = plydata['vertex']
+                xyz = np.vstack(
+                    [vertices['x'], vertices['y'], vertices['z']]).T
+                num_pts = min(num_pts, xyz.shape[0])
+                sample_indices = np.random.choice(xyz.shape[0], size=[num_pts], replace=False)
+                xyz = xyz[sample_indices,:]
+                print(f"Sampling {num_pts} points from {sample_from_pcd}...")
             shs = np.random.random((num_pts, 3)) / 255.0
             pcd = BasicPointCloud(points=xyz, colors=SH2RGB(
                 shs), normals=np.zeros((num_pts, 3)))
@@ -372,6 +394,7 @@ def readNerfSyntheticInfo(path, white_background, transparent_background, eval, 
 
     scene_info = SceneInfo(point_cloud=pcd,
                            point_cloud_complete=xyz_complete,
+                           mesh = meshes,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,

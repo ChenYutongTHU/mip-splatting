@@ -12,6 +12,10 @@
 import os
 import random
 import json
+import sys
+sys.path.append(os.path.abspath('../'))
+sys.path.append(os.path.abspath('../mip_splatting'))
+print(sys.path)
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
@@ -31,9 +35,9 @@ class Scene:
         self.gaussians = gaussians
         if load_iteration is not None:
             print("="*10)
-            if load_iteration == -1:
+            if load_iteration == '-1':
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
-            elif load_iteration == -2:
+            elif load_iteration == '-2':
                 self.loaded_iter = None
             else:
                 self.loaded_iter = load_iteration
@@ -48,6 +52,7 @@ class Scene:
                                                            blender_test_jsons=args.blender_test_jsons, dataset_type=args.dataset_type,
                                                            blender_bbox=args.blender_bbox,
                                                            sample_from_pcd=args.sample_from_pcd, gt_pcd=args.gt_pcd,
+                                                           gt_mesh = args.gt_mesh,
                                                            max_pcd_num=args.max_pcd_num,)    
         elif os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.llffhold, args.split_file, 
@@ -86,6 +91,7 @@ class Scene:
             # random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
 
         self.point_cloud_complete = scene_info.point_cloud_complete
+        self.mesh = scene_info.mesh
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
         self.train_cameras = {}

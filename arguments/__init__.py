@@ -79,6 +79,7 @@ class ModelParams(ParamGroup):
         self.eval_train_interval = -1
         self.sample_from_pcd = ""
         self.gt_pcd = ""
+        self.gt_mesh = ""
         self.dataset_sourcetype = "blender" #For Sugar
         self.apply_3Dfilter_off = False
         self.colmap_pcd = ""
@@ -89,7 +90,7 @@ class ModelParams(ParamGroup):
         self.pcd_init_scale_factor = 1.0
 
         self.load_mesh = "" #It should be a .obj file
-        self.load_iteration = -2
+        self.load_iteration = '-2'
 
         super().__init__(parser, "Loading Parameters", sentinel)
 
@@ -141,11 +142,13 @@ class OptimizationParams(ParamGroup):
 
         self.pcd_loss_weight = 0.0
         self.chamfer_n = 100000
+        self.mesh_pcd_loss_weight = 0.0
         # self.freeze_xyz = False
         self.only_color = False
         self.only_color_scale = False
         self.only_pcd_debug = False
         self.cd_sample_type = 'mean'
+        self.target_pcd = 'pcd'
 
         #Used for loaded mesh
         self.mesh_mask_loss_weight = 0.0

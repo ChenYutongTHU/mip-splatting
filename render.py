@@ -100,7 +100,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             }
             torch.save(grad_output, os.path.join(grad_path, view.image_name + ".pt"))
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, save_as_idx : bool, save_grad : bool, opt=None):
+def render_sets(dataset : ModelParams, iteration : str, pipeline : PipelineParams, skip_train : bool, skip_test : bool, save_as_idx : bool, save_grad : bool, opt=None):
     torch.set_grad_enabled(save_grad)
     gaussians = GaussianModel(
         dataset.sh_degree, dataset.apply_3Dfilter_off, dataset.isotropic)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser = ArgumentParser(description="Testing script parameters")
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
-    parser.add_argument("--iteration", default=-1, type=int)
+    parser.add_argument("--iteration", default='-1', type=str)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")

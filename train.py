@@ -199,28 +199,45 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             loss += mask_loss
             loss_dic = {**loss_dic, **mask_loss_dic}
 
-        if opt.pcd_loss_weight > 0:
-            scene.point_cloud_complete = scene.point_cloud_complete.to("cuda")
+        if opt.pcd_loss_weight > 0 or os.environ.get('SHOW_WEIGHT', '0') == '1':
+            if opt.target_pcd == 'pcd':
+                target_pcd = scene.point_cloud_complete.to("cuda")
+            elif opt.target_pcd == 'mesh':
+                from pytorch3d.ops import sample_points_from_meshes
+                scene.mesh = scene.mesh.to("cuda")
+                target_pcd = sample_points_from_meshes(scene.mesh, opt.chamfer_n)[0]
             if opt.cd_sample_type == 'mean':
-                pcd_loss = chamfer_loss(gaussians._xyz, scene.point_cloud_complete, opt.chamfer_n)* opt.pcd_loss_weight
+                pcd_loss = chamfer_loss(gaussians._xyz, target_pcd, opt.chamfer_n)
             elif opt.cd_sample_type == 'gaussian':
                 xyz = gaussians.sample_points_from_gaussians(opt.chamfer_n)
-                pcd_loss = chamfer_loss(xyz, scene.point_cloud_complete, opt.chamfer_n)* opt.pcd_loss_weight
-            loss += pcd_loss
-            loss_dic = {**loss_dic, 'pcd_loss':pcd_loss}
+                pcd_loss = chamfer_loss(xyz, target_pcd, opt.chamfer_n)
+            loss += pcd_loss* opt.pcd_loss_weight
+            loss_dic = {**loss_dic, 'pcd_loss':pcd_loss*opt.pcd_loss_weight, 'pcd_loss_unweighted':pcd_loss}
         
+        if opt.mesh_pcd_loss_weight > 0:
+            from pytorch3d.loss import point_mesh_face_distance
+            from pytorch3d.structures import Meshes, Pointclouds
+            scene.mesh = scene.mesh.to("cuda")
+            xyz = gaussians.sample_points_from_gaussians(opt.chamfer_n)
+            pcd = Pointclouds(points=[xyz]).to("cuda")
+            mesh_pcd_loss = point_mesh_face_distance(scene.mesh, pcd) 
+            loss += mesh_pcd_loss* opt.mesh_pcd_loss_weight 
+            loss_dic = {**loss_dic, 'mesh_pcd_loss':mesh_pcd_loss* opt.mesh_pcd_loss_weight, 'mesh_pcd_loss_unweighted':mesh_pcd_loss}
+
         if opt.self_cd_loss_weight > 0:
             xyz1 = gaussians.sample_points_from_gaussians(opt.chamfer_n)
             xyz2 = gaussians.sample_points_from_gaussians(opt.chamfer_n)
-            self_cd_loss = chamfer_loss(xyz1, xyz2, opt.chamfer_n)* opt.self_cd_loss_weight
-            loss += self_cd_loss
-            loss_dic = {**loss_dic, 'self_cd_loss':self_cd_loss}
+            self_cd_loss = chamfer_loss(xyz1, xyz2, opt.chamfer_n)
+            loss += self_cd_loss* opt.self_cd_loss_weight
+            loss_dic = {**loss_dic, 'self_cd_loss':self_cd_loss*opt.self_cd_loss_weight, 'self_cd_loss_unweighted':self_cd_loss}
         
         if opt.smooth_xyz_weight + opt.smooth_opacity_weight + opt.smooth_cov_weight + opt.smooth_color_weight > 0:
             smooth_loss_value, smooth_loss_dic = smooth_loss(gaussians, opt.smooth_loss_type, opt.n_neighbours, 
                                                             opt.smooth_xyz_weight, opt.smooth_opacity_weight, opt.smooth_cov_weight, opt.smooth_color_weight)
             loss += smooth_loss_value
             loss_dic = {**loss_dic, **smooth_loss_dic}
+
+
         if mesh is not None:
             if opt.mesh_mask_loss_weight > 0:
                 novel_viewpoint_cam, torch3d_camera = sample_new_camera(
